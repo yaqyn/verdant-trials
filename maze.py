@@ -1,8 +1,8 @@
-"""Maze data and recursive algorithms, independent of the graphical interface."""
+"""Maze graph and stepwise search algorithms, independent of the interface."""
 
+from collections import deque
 from dataclasses import dataclass, field
 from random import Random
-
 
 DIRECTIONS = ((-1, 0, "N", "S"), (0, 1, "E", "W"),
               (1, 0, "S", "N"), (0, -1, "W", "E"))
@@ -15,11 +15,11 @@ class Cell:
 
 
 class Maze:
-    """A row-major maze whose generators expose individual animation steps.
+    """Row-major maze exposing one animation event per traversal step.
 
-    Exhaust ``generate`` before solving. Recursive traversal intentionally follows
-    the course algorithm; grids approaching Python's recursion limit need a
-    different traversal strategy.
+    Explicit stacks retain recursive DFS's push/explore/backtrack behavior while
+    avoiding Python's call-stack limit on larger educational levels. Exhaust a
+    generation before solving or moving through the resulting maze.
     """
 
     def __init__(self, rows=12, cols=16, seed=None):
@@ -31,60 +31,138 @@ class Maze:
         self.solved = False
 
     def neighbors(self, row, col):
-        """Yield adjacent in-bounds cells and the direction from this cell."""
         for dr, dc, direction, _ in DIRECTIONS:
             nr, nc = row + dr, col + dc
             if 0 <= nr < self.rows and 0 <= nc < self.cols:
                 yield nr, nc, direction
 
+    def can_move(self, position, direction):
+        """Return whether a compass move stays inside a reciprocal passage."""
+        row, col = position
+        if direction not in OPPOSITE or not (0 <= row < self.rows and 0 <= col < self.cols):
+            return False
+        for nr, nc, candidate in self.neighbors(row, col):
+            if candidate == direction:
+                return (direction not in self.grid[row][col].walls and
+                        OPPOSITE[direction] not in self.grid[nr][nc].walls)
+        return False
+
+    def _passages(self, position):
+        for nr, nc, direction in self.neighbors(*position):
+            if self.can_move(position, direction):
+                yield nr, nc
+
     def generate(self):
-        """Carve a spanning tree using randomized recursive depth-first search."""
+        """Carve a spanning tree with randomized depth-first search."""
         self.grid = [[Cell() for _ in range(self.cols)] for _ in range(self.rows)]
-        self.path = []
-        self.solved = False
+        self.path, self.solved = [], False
         rng = Random(self.seed)
         visited = {(0, 0)}
         self.grid[0][0].walls.remove("N")
         self.grid[-1][-1].walls.remove("S")
 
-        def carve(row, col):
-            choices = list(self.neighbors(row, col))
-            rng.shuffle(choices)
-            for nr, nc, direction in choices:
-                if (nr, nc) in visited:
-                    continue
-                visited.add((nr, nc))
-                self.grid[row][col].walls.remove(direction)
-                self.grid[nr][nc].walls.remove(OPPOSITE[direction])
-                yield nr, nc
-                yield from carve(nr, nc)
+        def choices(position):
+            candidates = list(self.neighbors(*position))
+            rng.shuffle(candidates)
+            return iter(candidates)
 
+        stack = [((0, 0), choices((0, 0)))]
         yield 0, 0
-        yield from carve(0, 0)
+        while stack:
+            position, candidates = stack[-1]
+            candidate = next(candidates, None)
+            if candidate is None:
+                stack.pop()
+                continue
+            nr, nc, direction = candidate
+            neighbor = (nr, nc)
+            if neighbor in visited:
+                continue
+            row, col = position
+            visited.add(neighbor)
+            self.grid[row][col].walls.remove(direction)
+            self.grid[nr][nc].walls.remove(OPPOSITE[direction])
+            yield neighbor
+            stack.append((neighbor, choices(neighbor)))
 
-    def solve(self):
-        """Yield exploration/backtracking events, retaining the successful path."""
-        self.path = []
-        self.solved = False
-        visited = set()
+    @staticmethod
+    def _reconstruct(parents, position):
+        path = []
+        while position is not None:
+            path.append(position)
+            position = parents[position]
+        return path[::-1]
+
+    def route_from(self, start):
+        """Return a shortest route to the exit without altering search state."""
+        if not (0 <= start[0] < self.rows and 0 <= start[1] < self.cols):
+            raise ValueError("Start must be inside the maze")
+        start = tuple(start)
         goal = (self.rows - 1, self.cols - 1)
-
-        def search(row, col):
-            position = (row, col)
-            visited.add(position)
-            self.path.append(position)
-            yield "visit", position
+        queue, parents = deque([start]), {start: None}
+        while queue:
+            position = queue.popleft()
             if position == goal:
-                self.solved = True
-                return True
-            for nr, nc, direction in self.neighbors(row, col):
-                if direction in self.grid[row][col].walls or (nr, nc) in visited:
-                    continue
-                if (yield from search(nr, nc)):
-                    return True
-            self.path.pop()
-            yield "backtrack", position
-            return False
+                return self._reconstruct(parents, position)
+            for neighbor in self._passages(position):
+                if neighbor not in parents:
+                    parents[neighbor] = position
+                    queue.append(neighbor)
+        return []
 
-        yield from search(0, 0)
-        yield "done", goal if self.solved else (0, 0)
+    def metrics(self):
+        """Count graph features; boundary entrance/exit openings are excluded."""
+        degrees = [sum(1 for _ in self._passages((r, c)))
+                   for r in range(self.rows) for c in range(self.cols)]
+        return {"cells": self.rows * self.cols,
+                "dead_ends": sum(degree == 1 for degree in degrees),
+                "junctions": sum(degree >= 3 for degree in degrees)}
+
+    def solve(self, strategy="dfs"):
+        """Yield (action, position), maintaining the current route in ``path``.
+
+        DFS visits deeply then backtracks; BFS visits in distance order and
+        exposes each visited cell's parent route. Both return a shortest route
+        on our tree mazes; BFS also guarantees this on graphs containing cycles.
+        """
+        if strategy not in ("dfs", "bfs"):
+            raise ValueError("Strategy must be 'dfs' or 'bfs'")
+        self.path, self.solved = [], False
+        start, goal = (0, 0), (self.rows - 1, self.cols - 1)
+        visited = {start}
+        if strategy == "bfs":
+            queue, parents = deque([start]), {start: None}
+            while queue:
+                position = queue.popleft()
+                self.path = self._reconstruct(parents, position)
+                yield "visit", position
+                if position == goal:
+                    self.solved = True
+                    break
+                for neighbor in self._passages(position):
+                    if neighbor not in visited:
+                        visited.add(neighbor)
+                        parents[neighbor] = position
+                        queue.append(neighbor)
+            if not self.solved:
+                self.path = []
+        else:
+            self.path = [start]
+            stack = [(start, iter(self._passages(start)))]
+            yield "visit", start
+            while stack:
+                position, neighbors = stack[-1]
+                if position == goal:
+                    self.solved = True
+                    break
+                neighbor = next(neighbors, None)
+                if neighbor is None:
+                    stack.pop()
+                    self.path.pop()
+                    yield "backtrack", position
+                elif neighbor not in visited:
+                    visited.add(neighbor)
+                    self.path.append(neighbor)
+                    stack.append((neighbor, iter(self._passages(neighbor))))
+                    yield "visit", neighbor
+        yield "done", goal if self.solved else start
