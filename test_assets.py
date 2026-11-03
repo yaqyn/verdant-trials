@@ -7,7 +7,7 @@ import xml.etree.ElementTree as ET
 class AssetTests(unittest.TestCase):
     def test_original_illustration_and_licensed_font_are_bundled(self):
         assets = Path(__file__).parent / 'assets'
-        self.assertGreater((assets / 'forest-frame.png').stat().st_size, 100_000)
+        self.assertGreater((assets / 'verdant-world.png').stat().st_size, 100_000)
         self.assertGreater((assets / 'fonts/Cinzel.ttf').stat().st_size, 10_000)
         self.assertIn('SIL OPEN FONT LICENSE', (assets / 'fonts/OFL-Cinzel.txt').read_text())
 

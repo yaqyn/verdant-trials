@@ -10,6 +10,29 @@ from PySide6.QtWidgets import QWidget
 ASSETS = Path(__file__).resolve().parent / 'assets'
 
 
+def cover_source_rect(image_width, image_height, target_width, target_height):
+    """Center-crop an image to fill a target without distorting its proportions.
+
+    Cropping happens in source-image coordinates. Both image axes receive the
+    same scale when Qt paints this rectangle into the target viewport.
+    """
+    if min(image_width, image_height, target_width, target_height) <= 0:
+        raise ValueError('Image and target dimensions must be positive')
+    scale = max(target_width / image_width, target_height / image_height)
+    width, height = target_width / scale, target_height / scale
+    return QRectF((image_width-width)/2, (image_height-height)/2, width, height)
+
+
+BOARD_COLORS = {
+    'dark': dict(base=(81, 77, 63), border='#a0a183', stone='#a1a48b',
+                 highlight='#d2cfb2', moss='#829268', trail='#929f7a', route='#f3d491',
+                 marker='#f6dfae', marker_edge='#fff8e0', origin='#e6ce8e'),
+    'light': dict(base=(189, 191, 163), border='#697c5b', stone='#55674f',
+                  highlight='#97aa7f', moss='#748e61', trail='#81926d', route='#65511d',
+                  marker='#5c793b', marker_edge='#f6f3d5', origin='#526733'),
+}
+
+
 class MazeBoard(QWidget):
     """Paint the world while leaving movement rules and scheduling to its owner."""
 
@@ -19,7 +42,7 @@ class MazeBoard(QWidget):
         super().__init__(parent)
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         self.setAccessibleName('Quest maze')
-        self.setAccessibleDescription('Move with arrow keys or W A S D. Reach the ancient gate.')
+        self.setAccessibleDescription('Move with arrow keys or W A S D. Reach the enchanted waygate.')
         self.setMinimumSize(440, 340)
         self.maze = None
         self.player = (0, 0)
@@ -31,14 +54,20 @@ class MazeBoard(QWidget):
         self._visual_position = QPointF(0, 0)
         self._static_key = None
         self._static = QPixmap()
-        self._frame = QPixmap(str(ASSETS / 'forest-frame.png'))
-        self._gate = QSvgRenderer(str(ASSETS / 'icons/gate.svg'), self)
-        self._walls = []
-        for filename in ('stone-wall.svg', 'stone-wall-vertical.svg'):
-            data = (ASSETS / 'walls' / filename).read_bytes()
-            data = data.replace(b'#56604e', b'#969482').replace(b'#9b9875', b'#c4bda0')
-            self._walls.append(QSvgRenderer(QByteArray(data), self))
-        self._tile = self._make_texture()
+        self._frame = QPixmap(str(ASSETS / 'verdant-world.png'))
+        self._gate = QSvgRenderer(str(ASSETS / 'icons/waygate.svg'), self)
+        self._walls = {}
+        self._tiles = {}
+        for mode, colors in BOARD_COLORS.items():
+            renderers = []
+            for filename in ('stone-wall.svg', 'stone-wall-vertical.svg'):
+                data = (ASSETS / 'walls' / filename).read_bytes()
+                for source, role in ((b'#56604e', 'stone'), (b'#9b9875', 'highlight'),
+                                     (b'#73805a', 'moss')):
+                    data = data.replace(source, colors[role].encode())
+                renderers.append(QSvgRenderer(QByteArray(data), self))
+            self._walls[mode] = renderers
+            self._tiles[mode] = self._make_texture(colors['base'])
         self._animation = QPropertyAnimation(self, b'visualPosition', self)
         self._animation.setDuration(105)
         self._animation.setEasingCurve(QEasingCurve.Type.OutCubic)
@@ -59,8 +88,10 @@ class MazeBoard(QWidget):
     visualPosition = Property(QPointF, _get_visual_position, _set_visual_position)
 
     def set_theme(self, mode):
+        if mode not in BOARD_COLORS:
+            raise ValueError('Board theme must be dark or light')
         self.mode = mode
-        # The moonlit map remains dark in both interface themes.
+        self._static_key = None
         self.update()
 
     def set_state(self, maze, player, trail, overlay, explored, backtracked, complete=False):
@@ -91,15 +122,15 @@ class MazeBoard(QWidget):
         self.update()
 
     @staticmethod
-    def _make_texture():
+    def _make_texture(base):
         tile = QPixmap(96, 96)
-        tile.fill(QColor('#302d25'))
+        tile.fill(QColor(*base))
         painter = QPainter(tile)
         rng = Random(731)
         for y in range(96):
             for x in range(96):
                 n = rng.choice((-2, -1, 0, 0, 0, 1, 2))
-                painter.setPen(QColor(48+n, 45+n, 37+n))
+                painter.setPen(QColor(*(channel+n for channel in base)))
                 painter.drawPoint(x, y)
         painter.end()
         return tile
@@ -108,7 +139,7 @@ class MazeBoard(QWidget):
         area = QRectF(0, 0, self.width(), self.height())
         if self.maze is None:
             return area, QRectF(), 0
-        size = min(self.width()*.78/self.maze.cols, self.height()*.65/self.maze.rows)
+        size = min(self.width()*.80/self.maze.cols, self.height()*.74/self.maze.rows)
         board = QRectF((self.width()-size*self.maze.cols)/2,
                        (self.height()-size*self.maze.rows)/2,
                        size*self.maze.cols, size*self.maze.rows)
@@ -120,7 +151,7 @@ class MazeBoard(QWidget):
 
     def _cache_static(self, area, board, size):
         signature = tuple(frozenset(cell.walls) for row in self.maze.grid for cell in row)
-        key = (self.width(), self.height(), self.devicePixelRatioF(), id(self.maze), signature)
+        key = (self.width(), self.height(), self.devicePixelRatioF(), id(self.maze), signature, self.mode)
         if key == self._static_key:
             return
         self._static_key = key
@@ -132,10 +163,19 @@ class MazeBoard(QWidget):
         p.setRenderHint(QPainter.RenderHint.Antialiasing)
         p.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
         if not self._frame.isNull():
-            p.drawPixmap(area, self._frame, QRectF(self._frame.rect()))
-        # A uniform quiet ground lets players distinguish passages immediately.
-        p.fillRect(board.adjusted(-3, -3, 3, 3), QBrush(self._tile))
-        p.setPen(QPen(QColor('#8d886b'), 1))
+            source = cover_source_rect(self._frame.width(), self._frame.height(),
+                                       area.width(), area.height())
+            p.drawPixmap(area, self._frame, source)
+        colors = BOARD_COLORS[self.mode]
+        # A softly shadowed map floats above the scenery; only the landscape is
+        # cropped on resize. The maze always keeps square cells and its own fit.
+        p.setPen(Qt.PenStyle.NoPen)
+        for inset in range(10, 2, -2):
+            p.setBrush(QColor(16, 38, 24, 12))
+            p.drawRoundedRect(board.adjusted(-inset, -inset+4, inset, inset+4), 8, 8)
+        p.fillRect(board.adjusted(-3, -3, 3, 3), QBrush(self._tiles[self.mode]))
+        p.setPen(QPen(QColor(colors['border']), 1))
+        p.setBrush(Qt.BrushStyle.NoBrush)
         p.drawRect(board.adjusted(-3, -3, 3, 3))
         width = max(2.0, min(6.0, size*.11))
         p.setPen(QPen(QColor(0, 0, 0, 145), width+2, Qt.PenStyle.SolidLine,
@@ -155,9 +195,9 @@ class MazeBoard(QWidget):
             p.drawLine(QPointF(x1+2,y1+3), QPointF(x2+2,y2+3))
         for direction, (x1,y1,x2,y2) in edges:
             if direction in ('N', 'S'):
-                self._walls[0].render(p, QRectF(x1,y1-width/2,size,width))
+                self._walls[self.mode][0].render(p, QRectF(x1,y1-width/2,size,width))
             else:
-                self._walls[1].render(p, QRectF(x1-width/2,y1,width,size))
+                self._walls[self.mode][1].render(p, QRectF(x1-width/2,y1,width,size))
         p.end()
 
     def _draw_route(self, painter, route, board, size, color, width):
@@ -187,11 +227,12 @@ class MazeBoard(QWidget):
             for r,c in positions:
                 p.fillRect(QRectF(board.left()+c*size+inset, board.top()+r*size+inset,
                                   max(0,size-inset*2), max(0,size-inset*2)), color)
-        self._draw_route(p, self.trail, board, size, '#67715b', max(1.5,size*.08))
-        self._draw_route(p, self.overlay, board, size, '#e3c77f', max(2,size*.12))
+        colors = BOARD_COLORS[self.mode]
+        self._draw_route(p, self.trail, board, size, colors['trail'], max(1.5,size*.08))
+        self._draw_route(p, self.overlay, board, size, colors['route'], max(2,size*.12))
         origin = self._center((0,0), board, size)
         p.setBrush(Qt.BrushStyle.NoBrush)
-        p.setPen(QPen(QColor('#cdb680'), 1.5))
+        p.setPen(QPen(QColor(colors['origin']), 1.5))
         radius = min(15, size*.25)
         p.drawEllipse(origin, radius, radius)
         goal = self._center((self.maze.rows-1,self.maze.cols-1), board, size)
@@ -211,8 +252,8 @@ class MazeBoard(QWidget):
                              QPointF(center.x()+radius*.7,center.y()),
                              QPointF(center.x(),center.y()+radius),
                              QPointF(center.x()-radius*.7,center.y())])
-        p.setBrush(QColor('#ead29a'))
-        p.setPen(QPen(QColor('#fff1cb'),1))
+        p.setBrush(QColor(colors['marker']))
+        p.setPen(QPen(QColor(colors['marker_edge']),1))
         p.drawPolygon(diamond)
         if self.hasFocus():
             p.setBrush(Qt.BrushStyle.NoBrush)
