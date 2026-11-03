@@ -113,6 +113,22 @@ class AppTests(unittest.TestCase):
         self.assertIsNone(app.job)
         self.assertEqual(app.player, (0, 0))
 
+    def test_pace_controls_and_skip_generation(self):
+        app = self.app
+        app.speed.set('Slow')
+        app._preset_pace()
+        self.assertEqual(app.step_delay.get(), 400)
+        app.toggle_pause()
+        app.step_delay.set(275)
+        app._pace_changed()
+        self.assertEqual(app.speed.get(), 'Custom')
+        self.assertTrue(app.paused)
+        app.skip_generation()
+        self.assertEqual(app.phase, 'ready')
+        self.assertFalse(app.paused)
+        self.assertIsNone(app.job)
+        self.assertTrue(app.maze.route_from((0, 0)))
+
     def test_lighting_preserves_quest_and_animation(self):
         app = self.app
         app.toggle_pause()

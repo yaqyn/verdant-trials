@@ -19,15 +19,15 @@ On Arch Linux, Tkinter requires the `tk` package. On Ubuntu, install `python3-tk
 
 ## Enter the forest
 
-Dark forest is the default theme. Switch World lighting to Daylight for lighter controls without resetting the quest. The board features an original generated ruined-forest frame, SVG moss-stone walls, and original compass, lantern, gate and wayfarer icons. Cinzel gives display headings an engraved RPG character; instructions retain a readable system font. Asset provenance and the final generation prompt are in [assets/ARTWORK.md](assets/ARTWORK.md). Font fallbacks and a plain board keep the app functional on limited systems.
+Dark forest is the default theme. Switch World lighting to Daylight for lighter controls without resetting the quest. The board features an original generated ruined-forest frame, SVG moss-stone walls with cast shadows, a subtle earthen ground texture, and original compass, lantern, gate and wayfarer icons. Cinzel gives display headings an engraved RPG character; instructions retain a readable system font. Asset provenance and the final generation prompt are in [assets/ARTWORK.md](assets/ARTWORK.md). Font fallbacks and a plain board keep the app functional on limited systems.
 
 ## Choose your experience
 
 **Play:** click the maze and use arrow keys or WASD. The dot is your position; **E** marks the exit. Show next move reveals one step. Reveal route shows the remaining route. Both count as assistance. When you reach the exit, compare your move count with the direct route and continue to the next level.
 
-**Observe:** choose depth-first or breadth-first search, then select Run search. Pause freezes the traversal; Step advances one event. Replay search lets you try another algorithm on the same maze. Live explanations describe visits and backtracking. Teal shows the revealed or completed route, blue marks explored cells, and sand marks backtracking.
+**Observe:** choose depth-first or breadth-first search, then select Run search. Pause freezes the traversal; Step advances one event. Space toggles pause, and H asks for a hint in Play mode. Replay search lets you try another algorithm on the same maze. Live explanations describe visits and backtracking. Teal shows the revealed or completed route, blue marks explored cells, and sand marks backtracking.
 
-New maze cancels the current animation. Blank seeds create random layouts; a numeric seed reproduces a layout at the same level. The actual seed is shown below the board. Slow, Normal, Fast, and Instant control animation pace; Instant still processes bounded batches so the window can handle input.
+New maze cancels the current animation. Blank seeds create random layouts; a numeric seed reproduces a layout at the same level. The actual seed is shown below the board. Slow (400 ms), Normal (180 ms), Fast (60 ms), and Instant set the animation pace. A live slider adjusts each step from 30 to 600 ms; right is slower. Backtracking pauses slightly longer so changes are easier to follow. Instant still processes bounded batches so the window can handle input. Enter maze now skips carving and starts play immediately.
 
 ## Five levels
 

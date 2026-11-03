@@ -8,7 +8,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--level', type=int, default=1, choices=range(1, 6))
     parser.add_argument('--seed', type=int, default=None)
-    parser.add_argument('--delay', type=int, default=25,
+    parser.add_argument('--delay', type=int, default=180,
                         help='Animation delay in milliseconds (0–1000)')
     args = parser.parse_args()
     if not 0 <= args.delay <= 1000:

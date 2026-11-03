@@ -5,13 +5,14 @@ import tkinter as tk
 from tkinter import ttk
 
 from art import draw_svg, wall
+from ground import draw_ground
 from levels import LEVELS
 from maze import Maze
 from theme import COLORS as C, configure
 
 
 class MazeApp:
-    def __init__(self, root, level_id=None, seed=None, delay=25):
+    def __init__(self, root, level_id=None, seed=None, delay=180):
         self.root = root
         configure(root)
         root.title('Maze Runner — The Verdant Trials')
@@ -29,6 +30,8 @@ class MazeApp:
         self.algorithm = tk.StringVar(value='Depth-first search')
         self.seed = tk.StringVar(value=str(seed) if seed is not None else '')
         self.speed = tk.StringVar(value='Normal')
+        self.step_delay = tk.DoubleVar(value=max(30, min(600, delay)))
+        self.pace_text = tk.StringVar()
         self.level_choice = tk.StringVar()
         self.appearance = tk.StringVar(value='Dark forest')
         self.quest = tk.StringVar()
@@ -125,6 +128,13 @@ class MazeApp:
         speed = ttk.Combobox(sidebar, textvariable=self.speed, state='readonly',
                              values=['Slow', 'Normal', 'Fast', 'Instant'])
         speed.pack(fill='x')
+        speed.bind('<<ComboboxSelected>>', self._preset_pace)
+        ttk.Scale(sidebar, from_=30, to=600, variable=self.step_delay,
+                  command=self._pace_changed).pack(fill='x', pady=(5, 0))
+        ttk.Label(sidebar, textvariable=self.pace_text, style='Muted.TLabel').pack(anchor='w')
+        self._pace_label()
+        self.skip_button = ttk.Button(sidebar, text='Enter maze now', command=self.skip_generation)
+        self.skip_button.pack(fill='x', pady=(5, 0))
         ttk.Button(sidebar, text='Begin a new quest', style='Accent.TButton',
                    command=self.new_maze).pack(fill='x', pady=(14, 4))
         self.run_button = ttk.Button(sidebar, text='Run search', command=self.run_search)
@@ -141,7 +151,7 @@ class MazeApp:
         self.reveal_button.pack(fill='x', pady=2)
         self.next_button = ttk.Button(sidebar, text='Next chapter', command=self.next_level)
         self.next_button.pack(fill='x', pady=(6, 2))
-        ttk.Label(sidebar, text='Move with arrows or W A S D.\nClick the map to focus.\nReach the gate to finish the quest.',
+        ttk.Label(sidebar, text='Move with arrows or W A S D.\nH: hint. Space: pause/resume.\nReach the gate to finish the quest.',
                   wraplength=220, style='Muted.TLabel').pack(anchor='w', pady=10)
         workspace = ttk.Frame(body)
         workspace.pack(side='left', fill='both', expand=True)
@@ -267,7 +277,8 @@ class MazeApp:
         self.player = (0, 0)
         self.trail = [self.player]
         self.moves = self.visits = self.retreats = self.hints = 0
-        self.paused = False
+        if self.phase != 'generating':
+            self.paused = False
         if self.phase == 'ready':
             self._ready_message()
         self._controls()
@@ -278,6 +289,7 @@ class MazeApp:
         self.explanation.set(self.levels[self.level_index].concept)
 
     def _controls(self):
+        self.skip_button.configure(state='normal' if self.phase == 'generating' else 'disabled')
         active = self.phase in ('generating', 'searching')
         ready = self.phase == 'ready'
         play = ready and self.mode.get() == 'Play'
@@ -304,6 +316,38 @@ class MazeApp:
         self._controls()
         self.tick()
 
+    def _pace_label(self):
+        milliseconds = round(self.step_delay.get())
+        self.pace_text.set('Instant: batched preview' if self.speed.get() == 'Instant'
+                           else f'{milliseconds} ms per step — slower to the right')
+
+    def _preset_pace(self, event=None):
+        presets = {'Slow': 400, 'Normal': 180, 'Fast': 60}
+        if self.speed.get() in presets:
+            self.step_delay.set(presets[self.speed.get()])
+        self._pace_label()
+        self._reschedule_pace()
+
+    def _pace_changed(self, value=None):
+        self.speed.set('Custom')
+        self._pace_label()
+        self._reschedule_pace()
+
+    def _reschedule_pace(self):
+        if self.job is not None and not self.paused:
+            self._cancel()
+            self.job = self.root.after(round(self.step_delay.get()), self.tick)
+
+    def skip_generation(self):
+        if self.phase != 'generating':
+            return
+        self._cancel()
+        for _ in self.steps:
+            pass
+        self._advance()
+        self.paused = False
+        self._controls()
+
     def toggle_pause(self):
         if self.phase not in ('generating', 'searching'):
             return
@@ -323,6 +367,7 @@ class MazeApp:
 
     def tick(self):
         self.job = None
+        self._pace_label()
         if self.closed or self.paused:
             return
         # Instant mode still yields to the event loop between bounded batches.
@@ -330,7 +375,9 @@ class MazeApp:
             if not self._advance(render=False):
                 return
         self.draw()
-        delay = {'Slow': 160, 'Normal': self.delay, 'Fast': 1, 'Instant': 1}[self.speed.get()]
+        delay = 1 if self.speed.get() == 'Instant' else round(self.step_delay.get())
+        if self.phase == 'searching' and getattr(self, 'last_action', '') == 'backtrack':
+            delay = round(delay * 1.4)
         self.job = self.root.after(delay, self.tick)
 
     def _advance(self, render=True):
@@ -351,6 +398,8 @@ class MazeApp:
             return False
         if self.phase == 'searching':
             action, position = event
+            self.last_action = action
+            self.overlay = list(self.maze.path)
             if action == 'visit':
                 self.visits += 1
                 self.explored.add(position)
@@ -371,6 +420,12 @@ class MazeApp:
     def _key(self, event):
         if isinstance(self.root.focus_get(), (ttk.Entry, ttk.Combobox)):
             return
+        if event.keysym == 'space':
+            self.toggle_pause()
+            return 'break'
+        if event.keysym in ('h', 'H') and self.mode.get() == 'Play':
+            self.hint()
+            return 'break'
         direction = {'Up':'N', 'Down':'S', 'Left':'W', 'Right':'E', 'w':'N', 's':'S', 'a':'W', 'd':'E'}.get(event.keysym)
         if not direction or self.phase != 'ready' or self.mode.get() != 'Play':
             return
@@ -446,9 +501,11 @@ class MazeApp:
             self._wall_geometry = geometry
             self._wall_items = {}
             self._wall_states = {}
-            # Opaque, uniform map floor keeps wall and path contrast independent of art.
+            self._ground_photo = draw_ground(canvas, ox-4, oy-4,
+                size*self.maze.cols+8, size*self.maze.rows+8,
+                theme='light' if self.appearance.get() == 'Daylight' else 'dark')
             canvas.create_rectangle(ox-4, oy-4, ox+size*self.maze.cols+4,
-                oy+size*self.maze.rows+4, fill=C['surface'],
+                oy+size*self.maze.rows+4, fill='',
                 outline=C.get('border', C['accent']), tags='floor')
         def center(pos):
             r,c = pos
@@ -501,7 +558,7 @@ class MazeApp:
                               fill=C['player'],outline=C['ink'],width=1,tags='dynamic')
         if self.phase == 'complete':
             canvas.create_text(width/2, height*.10, text='Quest complete',
-                fill='#e4c987', font=('TkDefaultFont', 13, 'bold'), tags='dynamic')
+                fill='#e4c987', font=('Cinzel', 13, 'bold'), tags='dynamic')
         self.metrics.set(f'Seed {self.active_seed}   Moves {self.moves}   Explored {self.visits}   Backtracks {self.retreats}   Hints {self.hints}')
 
     def close(self):

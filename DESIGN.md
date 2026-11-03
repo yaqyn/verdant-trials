@@ -28,7 +28,7 @@ Theme changes preserve the maze, current player position, algorithm state and an
 
 ## Accessibility and motion
 
-Keyboard navigation uses native controls; arrows and WASD move only in Play and do not hijack text inputs. Focus stays visible. Color is paired with a legend, icons and textual feedback. There is no ambient flashing or compulsory decorative animation. Pause, Step and pace controls remain available. Tkinter assistive-technology support varies by platform; no WCAG certification is claimed. Semantic text foreground/background pairs are tested for a 4.5:1 contrast floor.
+Keyboard navigation uses native controls; arrows and WASD move only in Play and do not hijack text inputs. Focus stays visible. Color is paired with a legend, icons and textual feedback. The default step delay is 180 ms; backtracking holds 1.4× longer. Presets and a live 30–600 ms slider provide explicit pacing. Enter maze now skips generation without changing its result. The map floor uses deterministic neutral earth grain; wall shadows add depth without obscuring passages. There is no ambient flashing or compulsory decorative animation. Pause, Step and pace controls remain available. Tkinter assistive-technology support varies by platform; no WCAG certification is claimed. Semantic text foreground/background pairs are tested for a 4.5:1 contrast floor.
 
 ## Canonical capability map
 
