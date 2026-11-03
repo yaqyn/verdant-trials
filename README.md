@@ -1,19 +1,25 @@
 # Maze Runner
 
-A desktop learning studio for playing mazes and seeing how search algorithms explore them. Navigate yourself, ask for a hint, or pause an algorithm and inspect its next decision.
+A medieval forest quest for playing mazes and seeing how search algorithms explore them. Navigate yourself, ask for a hint, or pause an algorithm and inspect its next decision.
 
 > Built from [Boot.dev's Build a Maze Solver in Python](https://www.boot.dev/courses/build-maze-solver-python), extended with progressive levels, player controls, and algorithm comparison.
 
 ## Start exploring
 
-Requires **Python 3.10+**, Tkinter, and a graphical desktop. No pip packages, accounts, or network access are needed.
+Requires **Python 3.10+**, Tkinter, and a graphical desktop. Pillow enables the illustrated forest frame and bundled display typography. No accounts or runtime network access are needed.
 
 ```bash
-python3 main.py
-python3 main.py --level 3 --seed 42 --delay 15
+python3 -m venv .venv
+.venv/bin/python -m pip install -r requirements.txt
+.venv/bin/python main.py
+.venv/bin/python main.py --level 3 --seed 42 --delay 15
 ```
 
 On Arch Linux, Tkinter requires the `tk` package. On Ubuntu, install `python3-tk`. `python3 -m tkinter` checks whether your desktop can open a Tk window.
+
+## Enter the forest
+
+Dark forest is the default theme. Switch World lighting to Daylight for lighter controls without resetting the quest. The board features an original generated ruined-forest frame, SVG moss-stone walls, and original compass, lantern, gate and wayfarer icons. Cinzel gives display headings an engraved RPG character; instructions retain a readable system font. Asset provenance and the final generation prompt are in [assets/ARTWORK.md](assets/ARTWORK.md). Font fallbacks and a plain board keep the app functional on limited systems.
 
 ## Choose your experience
 
@@ -27,11 +33,11 @@ New maze cancels the current animation. Blank seeds create random layouts; a num
 
 | Level | Grid | Learning focus |
 | --- | --- | --- |
-| First steps | 4 × 5 | Cells and passages form a graph |
-| Find your rhythm | 8 × 10 | Following branches and backtracking |
-| Branching paths | 12 × 16 | Remembering visited cells |
-| Deep exploration | 18 × 24 | Exploring by distance with BFS |
-| The labyrinth | 24 × 32 | Comparing traversal work |
+| The moss gate | 4 × 5 | Cells and passages form a graph |
+| Whispering grove | 8 × 10 | Following branches and backtracking |
+| Ruins of the lost | 12 × 16 | Remembering visited cells |
+| Moonlit thicket | 18 × 24 | Exploring by distance with BFS |
+| The elder labyrinth | 24 × 32 | Comparing traversal work |
 
 Levels increase the search space. Random seeds vary in route length and branching, so a larger board is not guaranteed to be harder in every instance. All levels are available immediately; no progress is saved between sessions.
 
@@ -46,8 +52,8 @@ Read [the algorithm walkthrough](docs/ALGORITHMS.md) for mechanics, complexity, 
 ## Verify and maintain
 
 ```bash
-python3 -m unittest discover -v
-python3 -m compileall -q .
+.venv/bin/python -m unittest discover -v
+.venv/bin/python -m compileall -q app.py art.py maze.py theme.py typography.py
 ```
 
 Model tests cover connectivity, reciprocal walls, deterministic seeds, large levels, unsolvable graphs, and BFS shortest routes in graphs with cycles. GUI tests cover play completion, hints, search replay, pause/step, invalid input, and cancellation. GUI tests skip when no display is available; CI uses Xvfb to run them on Python 3.11–3.13.
@@ -57,7 +63,8 @@ Model tests cover connectivity, reciprocal walls, deterministic seeds, large lev
 | `maze.py` | Cells, generation, searches, movement, route hints |
 | `levels.py` | Progressive grids and learning concepts |
 | `app.py` | Desktop workflows, animation, rendering |
-| `theme.py` | Shared colors and native widget styles |
+| `theme.py`, `typography.py` | Dark/daylight colors, native controls, bundled font |
+| `art.py`, `assets/` | Forest frame, editable SVG icons and wall renderer |
 | `main.py` | Command-line options and desktop launch |
 
 [DESIGN.md](DESIGN.md) records interaction and visual decisions. Keyboard controls use native widgets; animation can be paused or stepped. Tkinter assistive-technology support varies by platform. This is a local educational app; it has no packaging installer, telemetry, cloud service, or saved player profile.
