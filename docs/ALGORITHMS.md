@@ -8,7 +8,7 @@ Generation starts with walls everywhere. It picks an unvisited neighbor, removes
 
 Every new cell joins through exactly one passage. For V cells, this creates V − 1 passages. Because every cell is reached and no passage joins two already visited cells, the result is a connected tree. There is exactly one simple route between any two cells.
 
-`Maze.generate` holds the current traversal in an explicit stack. This implements the same depth-first process as recursive calls while avoiding Python's recursion-depth ceiling. Its generator yields after a carving step so Tkinter can draw and handle input before continuing.
+`Maze.generate` holds the current traversal in an explicit stack. This implements the same depth-first process as recursive calls while avoiding Python's recursion-depth ceiling. Its generator yields after a carving step so Qt can draw and handle input before continuing.
 
 ## Depth-first search: follow a branch
 

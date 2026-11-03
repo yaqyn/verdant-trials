@@ -1,70 +1,77 @@
 # Maze Runner
 
-A medieval forest quest for playing mazes and seeing how search algorithms explore them. Navigate yourself, ask for a hint, or pause an algorithm and inspect its next decision.
+**The Verdant Trials** is a forest quest for playing mazes and watching graph searches find their way. Explore ancient passages, ask the lantern for guidance, or pause an algorithm at its next decision.
 
-> Built from [Boot.dev's Build a Maze Solver in Python](https://www.boot.dev/courses/build-maze-solver-python), extended with progressive levels, player controls, and algorithm comparison.
+> Based on [Boot.dev's Build a Maze Solver in Python](https://www.boot.dev/courses/build-maze-solver-python), extended into a Qt desktop game with progressive chapters and algorithm comparison. The original course uses Tkinter; this interface uses PySide6.
 
-## Start exploring
+![Maze Runner Qt interface with the forest maze and quest journal](docs/preview.png)
 
-Requires **Python 3.10+**, Tkinter, and a graphical desktop. Pillow enables the illustrated forest frame and bundled display typography. No accounts or runtime network access are needed.
+## Launch
+
+Requires **Python 3.10+** and a graphical desktop. Qt is installed in the project environment; no Tkinter or system font installation is needed.
 
 ```bash
 python3 -m venv .venv
 .venv/bin/python -m pip install -r requirements.txt
-.venv/bin/python main.py
-.venv/bin/python main.py --level 3 --seed 42 --delay 15
+./launch
 ```
 
-On Arch Linux, Tkinter requires the `tk` package. On Ubuntu, install `python3-tk`. `python3 -m tkinter` checks whether your desktop can open a Tk window.
-
-## Enter the forest
-
-Dark forest is the default theme. Switch World lighting to Daylight for lighter controls without resetting the quest. The board features an original generated ruined-forest frame, SVG moss-stone walls with cast shadows, a subtle earthen ground texture, and original compass, lantern, gate and wayfarer icons. Cinzel gives display headings an engraved RPG character; instructions retain a readable system font. Asset provenance and the final generation prompt are in [assets/ARTWORK.md](assets/ARTWORK.md). Font fallbacks and a plain board keep the app functional on limited systems.
-
-## Choose your experience
-
-**Play:** click the maze and use arrow keys or WASD. The dot is your position; **E** marks the exit. Show next move reveals one step. Reveal route shows the remaining route. Both count as assistance. When you reach the exit, compare your move count with the direct route and continue to the next level.
-
-**Observe:** choose depth-first or breadth-first search, then select Run search. Pause freezes the traversal; Step advances one event. Space toggles pause, and H asks for a hint in Play mode. Replay search lets you try another algorithm on the same maze. Live explanations describe visits and backtracking. Teal shows the revealed or completed route, blue marks explored cells, and sand marks backtracking.
-
-New maze cancels the current animation. Blank seeds create random layouts; a numeric seed reproduces a layout at the same level. The actual seed is shown below the board. Slow (400 ms), Normal (180 ms), Fast (60 ms), and Instant set the animation pace. A live slider adjusts each step from 30 to 600 ms; right is slower. Backtracking pauses slightly longer so changes are easier to follow. Instant still processes bounded batches so the window can handle input. Enter maze now skips carving and starts play immediately.
-
-## Five levels
-
-| Level | Grid | Learning focus |
-| --- | --- | --- |
-| The moss gate | 4 × 5 | Cells and passages form a graph |
-| Whispering grove | 8 × 10 | Following branches and backtracking |
-| Ruins of the lost | 12 × 16 | Remembering visited cells |
-| Moonlit thicket | 18 × 24 | Exploring by distance with BFS |
-| The elder labyrinth | 24 × 32 | Comparing traversal work |
-
-Levels increase the search space. Random seeds vary in route length and branching, so a larger board is not guaranteed to be harder in every instance. All levels are available immediately; no progress is saved between sessions.
-
-## Understand the algorithms
-
-Generation carves a connected tree with exactly one route between any pair of cells. DFS follows a branch and backs out of dead ends. BFS explores cells in distance order. Both find the same route in these tree mazes; their exploration order and visit counts differ.
-
-The engine uses explicit stacks to retain DFS behavior without Python's recursion-depth limit. Tkinter advances generators through `after` callbacks, keeping drawing and input separate from traversal logic. Animation speed is a teaching control, not a performance benchmark.
-
-Read [the algorithm walkthrough](docs/ALGORITHMS.md) for mechanics, complexity, and short experiments.
-
-## Verify and maintain
+On Windows, use `.venv\Scripts\python.exe main.py` after installing requirements with that interpreter.
 
 ```bash
-.venv/bin/python -m unittest discover -v
-.venv/bin/python -m compileall -q app.py art.py maze.py theme.py typography.py
+./launch --level 3 --seed 42 --delay 180
 ```
 
-Model tests cover connectivity, reciprocal walls, deterministic seeds, large levels, unsolvable graphs, and BFS shortest routes in graphs with cycles. GUI tests cover play completion, hints, search replay, pause/step, invalid input, and cancellation. GUI tests skip when no display is available; CI uses Xvfb to run them on Python 3.11–3.13.
+`launch` works from another directory. The game needs no account or runtime network connection. Qt's Linux desktop platform may require distribution-provided XCB or Wayland libraries. On a headless machine, use the offscreen platform for tests rather than launching a visible window.
+
+## Play
+
+Click the maze, then move with **arrows or WASD**. Reach the gate to finish the chapter. The gold diamond is your position; a ring marks the start. **H** requests a lantern hint. Reveal the route shows the remaining path. Both count as assistance.
+
+A completed quest shows your move count, the direct route length and assistance used, then offers the next chapter. All five chapters are available from the quest selector. Chapter size increases from 20 to 768 cells; seeds vary in route length and branching, so a larger board is not guaranteed to be harder in every instance.
+
+## Observe
+
+Switch to **Observe** to expose the algorithm tools. Choose DFS or BFS and Run search. Pause freezes exploration; Step advances one event. Space toggles pause while the maze is focused. Gold shows the current route, blue marks explored cells, and ash marks backtracking. Wayfinder notes explain each action.
+
+The default delay is **180 ms per event**. Fast (60 ms), Normal (180 ms), Slow (400 ms), and the live 30–600 ms slider change the pace. Backtracking holds slightly longer. **Enter maze now** skips generation when you want to start playing immediately. Search can be replayed on the same board with another algorithm.
+
+## World settings
+
+The quest panel's World settings disclosure contains an optional numeric seed and reduced movement animation. Blank seeds create random layouts; numeric seeds reproduce the same layout at a given chapter. The actual world seed appears below the maze. Invalid input preserves the current quest.
+
+Daylight switches to a lighter interface while retaining the moonlit board. Lighting changes preserve your current quest and animation state. Progress and preferences are not saved between sessions.
+
+## Artwork and rendering
+
+The board uses original forest-ruin artwork, editable SVG stone walls and icons, a quiet earth texture, and cast shadows. Qt paints at display resolution and animates player movement. Cinzel is bundled for quest headings under its SIL Open Font License; body copy uses a readable sans face.
+
+[Artwork provenance and the final generation prompt](assets/ARTWORK.md) document the original image and font sources. No existing game's artwork is included.
+
+## Learn the algorithms
+
+Generation carves a connected tree with exactly one route between any pair of cells. DFS follows a branch and backs out of dead ends. BFS explores by distance. Both find the same route in these tree mazes, but their exploration order and visit counts differ.
+
+Explicit stacks preserve DFS behavior without Python's recursion-depth limit. Qt advances the generators with a cancellable timer, keeping user input separate from traversal logic. Animation time is a teaching control, not an algorithm benchmark.
+
+Read [the algorithm walkthrough](docs/ALGORITHMS.md) for mechanics, complexity and short experiments.
+
+## Verify
+
+```bash
+QT_QPA_PLATFORM=offscreen .venv/bin/python -m unittest discover -v
+.venv/bin/python -m compileall -q main.py maze.py levels.py qt_app.py qt_board.py
+```
+
+Tests protect graph invariants, deterministic seeds, large levels, BFS shortest routes, movement, quest completion, hints, input validation, timer cancellation, themes and board rendering. Qt workflow tests need the installed requirements; they can run without a desktop using the offscreen platform. CI runs Python 3.11–3.13. A CI configuration is included; local verification does not imply a remote CI run.
 
 | File | Responsibility |
 | --- | --- |
-| `maze.py` | Cells, generation, searches, movement, route hints |
-| `levels.py` | Progressive grids and learning concepts |
-| `app.py` | Desktop workflows, animation, rendering |
-| `theme.py`, `typography.py` | Dark/daylight colors, native controls, bundled font |
-| `art.py`, `assets/` | Forest frame, editable SVG icons and wall renderer |
-| `main.py` | Command-line options and desktop launch |
+| `maze.py` | Cells, generation, searches, movement and route hints |
+| `levels.py` | Chapters, grid dimensions and learning concepts |
+| `qt_app.py` | Quest workflows, shared styles, controls and timer |
+| `qt_board.py` | Painter-based scenery, SVGs and player animation |
+| `assets/` | Original illustration, vector art and licensed font |
+| `main.py`, `launch` | Desktop entry point and location-independent launcher |
 
-[DESIGN.md](DESIGN.md) records interaction and visual decisions. Keyboard controls use native widgets; animation can be paused or stepped. Tkinter assistive-technology support varies by platform. This is a local educational app; it has no packaging installer, telemetry, cloud service, or saved player profile.
+[DESIGN.md](DESIGN.md) records visual and interaction decisions. Native Qt controls provide keyboard navigation and focus. Reduced motion disables movement interpolation. Assistive-technology behavior varies by platform; no accessibility certification is claimed.

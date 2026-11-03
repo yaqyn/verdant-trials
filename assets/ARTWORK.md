@@ -8,8 +8,8 @@ Use case: stylized-concept. Asset type: desktop medieval fantasy maze game backg
 
 ## Vector assets
 
-The SVG quest icons and wall segments are original project-local vector drawings. `art.py` renders their supported shapes directly onto the Tkinter canvas; the application does not need an SVG browser engine.
+The SVG quest icons and wall segments are original project-local vector drawings. `qt_board.py` renders the vectors through Qt SVG at the board scale, with painter-based shadows; no browser engine is required.
 
 ## Typography
 
-Bundled Cinzel is distributed under its accompanying SIL Open Font License. Font provenance is recorded alongside the font in `assets/fonts/`. The app uses it for display headings and keeps instructions in a readable system font. Font loading depends on the operating system and Tk build; serif/system fallbacks preserve functionality when registration is unavailable.
+Bundled Cinzel is distributed under its accompanying SIL Open Font License. Font provenance is recorded alongside the font in `assets/fonts/`. The app uses it for display headings and keeps instructions in a readable system font. Qt loads the bundled font through QFontDatabase for this application. System fallbacks preserve functionality when the face cannot be loaded.

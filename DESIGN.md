@@ -1,43 +1,39 @@
 # Maze Runner: the Verdant Trials
 
-## Product and direction
+## Product and creative direction
 
-An English desktop learning quest: play progressive forest labyrinths or observe how graph searches find a way through them. The user requested a dark medieval forest RPG atmosphere. Original ruined-forest artwork, mossy stone walls, antique brass, and restrained quest language give the app its identity. No artwork or branding from an existing game is used.
+An English desktop forest quest for playing progressive labyrinths and observing graph searches. The original ruins illustration, stone passages, brass markers, and engraved Cinzel title establish the RPG character. Contemporary spacing, strong typography, clear actions and focused screens provide the interface. No artwork or branding from an existing game is used.
 
-The maze remains the primary artifact. Learning explanations use plain algorithm terminology; controls pair thematic labels with understandable actions. Progression is a five-chapter journey, not a claim of saved player progression.
+Play is the primary experience. Observe reveals algorithm controls and learning explanations. A focused quest panel replaces the crowded tool sidebar. Progress is a five-chapter journey; every chapter is directly accessible and session progress is not persisted.
 
-## Visual ownership
+## Canonical runtime owners
 
-`theme.py` owns exact semantic colors in `THEMES`; `COLORS` is updated in place when switching modes. Dark forest is the default; Daylight is an accessible light alternative for controls. Both retain the forest board artwork and use a dark board palette where needed to preserve legibility. Native ttk widgets own keyboard, focus, hover, disabled and popup behavior. `app.py` owns composition and state, consuming the theme rather than redefining widget colors.
+- `qt_app.py`: application palette, shared Qt stylesheet, native controls, state transitions, timer and quest panel.
+- `qt_board.py`: QPainter board, SVG wall/gate rendering, texture, cached static scenery, focus, smooth player motion.
+- `maze.py`: movement rules, graph generation and search. UI changes must not change graph invariants.
+- `levels.py`: chapter names, dimensions and concepts.
+- `assets/`: original forest illustration, editable vector art, bundled Cinzel and its SIL Open Font License.
 
-`assets/forest-frame.png` is original generated environmental art: moonlit ruins and roots frame a quiet clearing. Keep the maze inside its central opening. Artwork resizes only when canvas dimensions change. `art.py` renders the original SVG wall segments and quest icons. Geometry, labels, player markers and routes must remain readable on every level.
+Qt loads the bundled font with QFontDatabase for this application; no host font installation is required. Cinzel is for display only. A readable system sans face handles instructions, metrics and controls. Preserve comfortable text size and wrapping instead of reducing everything to fit.
 
-## Typography
+## Composition and behavior
 
-Bundled Cinzel provides engraved Roman display headings suited to the quest setting. Instructions and controls use an available system sans face. `typography.py` registers Cinzel privately for the process where supported; no host font configuration is modified. Systems whose Tk exposes only bitmap fonts use fallbacks; Pillow display-title rendering may provide the bundled face independently of Tk font availability.
+A restrained top bar holds identity, Play/Observe selection, and lighting. The maze dominates the workspace. The quest panel holds chapter context, actions and completion feedback; advanced seed configuration is secondary. Observe additionally exposes DFS/BFS selection, run/pause/step and pace controls. Victory states show moves, direct route and assistance, and offer the next chapter without a blocking modal.
 
-## Composition
+Dark forest is the default; Daylight lightens interface controls while the illustrated world remains moonlit. Switching theme does not reset the maze, player position, search or animation lifecycle. New quest cancels the current traversal. Invalid seeds preserve the board and receive inline feedback. Errors and pending states must offer an obvious next action.
 
-The header establishes title and world lighting. A scrollable quest journal holds level selection and actions; the board occupies the remaining workspace. Quest chapter and current state sit above the board; legend, metrics and wayfinder notes sit below. Minimum window size and dynamic text wrapping must be tested. The sidebar scrolls rather than hiding actions at smaller sizes.
+## Board presentation
 
-## Behavior
+Keep passages inside the quiet central opening of the generated forest frame. Use low-contrast neutral earth grain, stone edges with offset shadows, gold guidance, and a distinct gate. Search shading must not conceal walls. Cache static scenery at display pixel density; resize and topology changes invalidate the cache.
 
-Play and Observe share maze creation, seed validation, difficulty selection and lifecycle cancellation. New quest cancels pending animation. Pause and Step expose individual transitions. A level change starts a fresh board. Hints and route reveals count as assistance. Completion offers the next chapter; all chapters remain directly available. Numeric seeds reproduce a board at a given level. Session progress and lighting preferences are not persisted.
+Player movement interpolates over a short duration, respecting each cardinal leg. Successive quick turns must not cut through walls. Algorithm jumps to nonadjacent cells snap rather than drawing a moving character through blocked passages. Reduced motion disables position interpolation.
 
-Theme changes preserve the maze, current player position, algorithm state and animation lifecycle. Only presentation changes. Errors remain inline and preserve the current board.
+## Pacing and accessibility
 
-## Accessibility and motion
+Default traversal pace is 180 ms per event. Slow/Fast presets, a live slider, Pause and Step make changes inspectable; backtracking may hold longer. Skipping generation leads directly to the same generated maze. There is no ambient flashing or required decorative motion.
 
-Keyboard navigation uses native controls; arrows and WASD move only in Play and do not hijack text inputs. Focus stays visible. Color is paired with a legend, icons and textual feedback. The default step delay is 180 ms; backtracking holds 1.4× longer. Presets and a live 30–600 ms slider provide explicit pacing. Enter maze now skips generation without changing its result. The map floor uses deterministic neutral earth grain; wall shadows add depth without obscuring passages. There is no ambient flashing or compulsory decorative animation. Pause, Step and pace controls remain available. Tkinter assistive-technology support varies by platform; no WCAG certification is claimed. Semantic text foreground/background pairs are tested for a 4.5:1 contrast floor.
+Native Qt controls own keyboard focus, input, disabled and selected states. The board accepts arrows/WASD only when focused; seed inputs retain normal editing keys. H requests a hint and Space pauses active traversal without hijacking text input. A legend and text feedback supplement colors. All quest controls remain reachable at the minimum supported window size. No platform-wide assistive-technology certification is claimed.
 
-## Canonical capability map
+## Verification contract
 
-| Capability | Owner | Verification |
-| --- | --- | --- |
-| Level, mode, algorithm, speed and theme | Native ttk controls in app.py | GUI lifecycle and theme switch checks |
-| Seed validation | App generation handler | Invalid input integration |
-| Animation lifecycle | App scheduler | Pause, restart and close tests |
-| Status and recovery | Quest status and notes | Completion and validation tests |
-| Movement and route rules | maze.py | Model behavioral tests |
-| SVG drawing | art.py + bundled assets | Primitive renderer tests |
-| Font registration | typography.py | Bundled license and fallback checks |
+Model tests protect connectivity, reciprocal walls, deterministic seeds, large levels and BFS route behavior. Qt tests exercise completion, hints, mode changes, theme changes, invalid input, timer cancellation, pause/step, keyboard movement, rendering and animation. CI uses Qt's offscreen platform; desktop review also checks normal rendering, chapter switching, layout at minimum size and the visible popup states of selectors.
