@@ -77,10 +77,16 @@ def draw_svg(canvas, name, x, y, width, height, tag='art', palette=None):
 
 def wall(canvas, x1, y1, x2, y2, width, tag='wall', palette=None):
     """Draw one horizontal/vertical moss-stone SVG wall segment."""
+    if abs(y2-y1) >= .01 and abs(x2-x1) >= .01:
+        raise ValueError('Maze walls must be horizontal or vertical')
+    offset = max(1, width*.4)
+    shadow = (palette or {}).get('shadow', '#171610')
+    items = [canvas.create_line(x1+offset, y1+offset, x2+offset, y2+offset,
+                               fill=shadow, width=width+1, capstyle='round', tags=tag)]
     if abs(y2-y1) < .01:
-        return draw_svg(canvas, 'walls/stone-wall.svg', min(x1,x2), y1-width/2,
+        return items + draw_svg(canvas, 'walls/stone-wall.svg', min(x1,x2), y1-width/2,
                         abs(x2-x1), width, tag, palette)
     if abs(x2-x1) < .01:
-        return draw_svg(canvas, 'walls/stone-wall-vertical.svg', x1-width/2, min(y1,y2),
+        return items + draw_svg(canvas, 'walls/stone-wall-vertical.svg', x1-width/2, min(y1,y2),
                         width, abs(y2-y1), tag, palette)
     raise ValueError('Maze walls must be horizontal or vertical')

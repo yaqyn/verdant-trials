@@ -32,10 +32,10 @@ class ArtTests(unittest.TestCase):
     def test_wall_orientations_and_theme_palette(self):
         canvas = RecordingCanvas()
         horizontal = wall(canvas, 0, 4, 64, 4, 8, palette={'stone': '#abcdef'})
-        self.assertEqual(len(horizontal), 5)
-        self.assertEqual(canvas.items[0][2]['fill'], '#abcdef')
+        self.assertEqual(len(horizontal), 6)
+        self.assertEqual(canvas.items[1][2]['fill'], '#abcdef')
         vertical = wall(canvas, 4, 0, 4, 64, 8)
-        self.assertEqual(len(vertical), 5)
+        self.assertEqual(len(vertical), 6)
         with self.assertRaises(ValueError):
             wall(canvas, 0, 0, 10, 10, 2)
 
