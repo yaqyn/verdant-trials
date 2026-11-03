@@ -113,6 +113,25 @@ class AppTests(unittest.TestCase):
         self.assertIsNone(app.job)
         self.assertEqual(app.player, (0, 0))
 
+    def test_lighting_preserves_quest_and_animation(self):
+        app = self.app
+        app.toggle_pause()
+        original = app.maze
+        for lighting in ('Daylight', 'Dark forest'):
+            app.appearance.set(lighting)
+            app.change_theme()
+            self.assertIs(app.maze, original)
+            self.assertTrue(app.paused)
+            self.assertIsNone(app.job)
+        app.toggle_pause()
+        self.ready()
+        position = app.player
+        app.appearance.set('Daylight')
+        app.change_theme()
+        self.assertEqual(app.player, position)
+        self.assertEqual(app.phase, 'ready')
+        self.assertTrue(app.canvas.find_withtag('wall'))
+
     def test_close_cancels_animation_callback(self):
         self.assertIsNotNone(self.app.job)
         self.app.close()
