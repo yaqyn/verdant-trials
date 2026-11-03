@@ -1,5 +1,7 @@
 # Quest artwork
 
+The active contemporary fantasy wallpaper and its final prompt are documented in [VERDANT-WORLD.md](VERDANT-WORLD.md). The original ornate forest frame below is retained for provenance and is no longer used by the app.
+
 `forest-frame.png` is an original image generated with the built-in image generation tool for this project. It is stored locally and requires no runtime network requests. No game artwork was copied.
 
 ## Final image prompt

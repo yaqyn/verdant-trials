@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+<title>Verdant Trials wayfinder crest</title>
+<circle cx="32" cy="32" r="27" fill="#e2eadb" stroke="#7f925f" stroke-width="1.5"/>
+<path d="M32 8 49 32 32 56 15 32Z" fill="none" stroke="#62754e" stroke-width="1.5"/>
+<path d="M23 42V28h18V18M41 28v14H31" fill="none" stroke="#906c2b" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M32 13c-8 2-11 7-10 13 7 0 11-4 10-13Z" fill="#417d60"/>
+<circle cx="23" cy="42" r="3" fill="#417d60"/>
+</svg>

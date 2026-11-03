@@ -1,6 +1,6 @@
 # Maze Runner
 
-**The Verdant Trials** is a forest quest for playing mazes and watching graph searches find their way. Explore ancient passages, ask the lantern for guidance, or pause an algorithm at its next decision.
+**Verdant Trials** is an enchanted-forest RPG quest for playing mazes and watching graph searches find their way. Explore ancient passages, ask the lantern for guidance, or pause an algorithm at its next decision.
 
 > Based on [Boot.dev's Build a Maze Solver in Python](https://www.boot.dev/courses/build-maze-solver-python), extended into a Qt desktop game with progressive chapters and algorithm comparison. The original course uses Tkinter; this interface uses PySide6.
 
@@ -40,13 +40,13 @@ The default delay is **180 ms per event**. Fast (60 ms), Normal (180 ms), Slow (
 
 The quest panel's World settings disclosure contains an optional numeric seed and reduced movement animation. Blank seeds create random layouts; numeric seeds reproduce the same layout at a given chapter. The actual world seed appears below the maze. Invalid input preserves the current quest.
 
-Daylight switches to a lighter interface while retaining the moonlit board. Lighting changes preserve your current quest and animation state. Progress and preferences are not saved between sessions.
+Daylight is the default: a bright enchanted woodland with waterfalls and runic stones. Moonlight switches the interface to a softer dark palette. Wallpaper always keeps its proportions when resizing: it fills the viewport through centered cropping, while the maze keeps square cells independently. Lighting changes preserve your current quest and animation state. Progress and preferences are not saved between sessions.
 
 ## Artwork and rendering
 
-The board uses original forest-ruin artwork, editable SVG stone walls and icons, a quiet earth texture, and cast shadows. Qt paints at display resolution and animates player movement. Cinzel is bundled for quest headings under its SIL Open Font License; body copy uses a readable sans face.
+The board uses original cinematic enchanted-forest artwork, editable SVG stone walls and icons, a quiet earth texture, and cast shadows. Qt paints at display resolution and animates player movement. Cinzel is bundled for quest headings under its SIL Open Font License; body copy uses a readable sans face.
 
-[Artwork provenance and the final generation prompt](assets/ARTWORK.md) document the original image and font sources. No existing game's artwork is included.
+[Current wallpaper provenance and final generation prompt](assets/VERDANT-WORLD.md) document the original image and font sources. No existing game's artwork is included.
 
 ## Learn the algorithms
 

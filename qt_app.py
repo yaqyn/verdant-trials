@@ -14,10 +14,11 @@ from qt_board import MazeBoard
 
 ASSETS = Path(__file__).resolve().parent / 'assets'
 PALETTES = {
-    'dark': dict(bg='#101713', panel='#19231d', raised='#223027', ink='#f1ead8',
-                 muted='#b4beaf', line='#354537', gold='#d8bf83', on_gold='#182018', error='#f2ab99'),
-    'light': dict(bg='#e9e9df', panel='#f7f6ee', raised='#dedfd0', ink='#25382c',
-                  muted='#56644f', line='#b4bba7', gold='#72541f', on_gold='#fffaf0', error='#9d3527')}
+    'dark': dict(bg='#1b2928', panel='#243732', raised='#32453d', ink='#f3f1df',
+                 muted='#bfcdc2', line='#516958', gold='#e4cd92', on_gold='#25372c', error='#f2b5a2'),
+    'light': dict(bg='#edf2ec', panel='#fbfcf7', raised='#e3ebe1', ink='#203c33',
+                  muted='#53695e', line='#c8d6c7', gold='#6f5424', on_gold='#fffdf5', error='#9d3527')}
+
 
 
 def stylesheet(mode):
@@ -28,7 +29,7 @@ def stylesheet(mode):
     QFrame#questPanel {{ background: {c['panel']}; border: 1px solid {c['line']}; border-radius: 16px; }}
     QFrame#victory {{ background: {c['raised']}; border: 1px solid {c['gold']}; border-radius: 12px; }}
     QLabel {{ background: transparent; border: none; }}
-    QLabel#brand {{ font-family: "Cinzel"; font-size: 27px; color: {c['gold']}; }}
+    QLabel#brand {{ font-family: "Cinzel"; font-size: 30px; color: {c['gold']}; }}
     QLabel#chapterTitle {{ font-family: "Cinzel"; font-size: 24px; }}
     QLabel#sectionTitle {{ font-family: "Cinzel"; font-size: 18px; }}
     QLabel#muted, QLabel#metrics {{ color: {c['muted']}; font-size: 12px; }}
@@ -70,13 +71,13 @@ class QuestWindow(QMainWindow):
     def __init__(self, level_id=1, seed=None, delay=180):
         super().__init__()
         QFontDatabase.addApplicationFont(str(ASSETS / 'fonts/Cinzel.ttf'))
-        self.setWindowTitle('Maze Runner — The Verdant Trials')
-        self.setWindowIcon(QIcon(str(ASSETS / 'icons/compass.svg')))
+        self.setWindowTitle('Verdant Trials — Maze Runner')
+        self.setWindowIcon(QIcon(str(ASSETS / 'icons/verdant-crest.svg')))
         self.resize(1360, 900)
         self.setMinimumSize(1000, 720)
         self.level_index = next((i for i, l in enumerate(LEVELS) if l.id == level_id), 0)
         self.mode = 'Play'
-        self.theme = 'dark'
+        self.theme = 'light'
         self.phase = 'idle'
         self.paused = False
         self.closed = False
@@ -85,7 +86,7 @@ class QuestWindow(QMainWindow):
         self.timer.timeout.connect(self._tick)
         self._build(delay)
         self.seed_input.setText('' if seed is None else str(seed))
-        self.change_theme('dark')
+        self.change_theme('light')
         self.new_maze()
 
     def _label(self, text='', role='', wrap=False):
@@ -111,10 +112,15 @@ class QuestWindow(QMainWindow):
         layout.setContentsMargins(28, 22, 28, 22)
         layout.setSpacing(20)
         top = QHBoxLayout()
+        crest = QLabel()
+        crest.setPixmap(QIcon(str(ASSETS / 'icons/verdant-crest.svg')).pixmap(48, 48))
+        crest.setAccessibleName('Verdant Trials wayfinder crest')
+        top.addWidget(crest)
+        top.addSpacing(8)
         brand_group = QVBoxLayout()
         brand_group.setSpacing(3)
-        brand_group.addWidget(self._label('Maze Runner', 'brand'))
-        brand_group.addWidget(self._label('The Verdant Trials', 'muted'))
+        brand_group.addWidget(self._label('Verdant Trials', 'brand'))
+        brand_group.addWidget(self._label('Maze Runner / An enchanted forest quest', 'muted'))
         top.addLayout(brand_group)
         top.addStretch()
         self.mode_group = QButtonGroup(self)
@@ -180,7 +186,7 @@ class QuestWindow(QMainWindow):
         self.reveal_button = self._button('Reveal the route', self.reveal)
         play_layout.addWidget(self.hint_button)
         play_layout.addWidget(self.reveal_button)
-        play_layout.addWidget(self._label('Find the gate. Hints show one safe step; revealing the route counts as assistance.', 'muted', True))
+        play_layout.addWidget(self._label('Reach the waygate. Hints show one safe step; revealing the route counts as assistance.', 'muted', True))
         right.addWidget(self.play_panel)
         self.observe_panel = QWidget()
         observe_layout = QVBoxLayout(self.observe_panel)
@@ -299,7 +305,7 @@ class QuestWindow(QMainWindow):
     def change_theme(self, mode=None):
         self.theme = mode if mode in PALETTES else ('light' if self.theme == 'dark' else 'dark')
         self.setStyleSheet(stylesheet(self.theme))
-        self.theme_button.setText('Daylight' if self.theme == 'dark' else 'Dark forest')
+        self.theme_button.setText('Daylight' if self.theme == 'dark' else 'Moonlight')
         self.board.set_theme(self.theme)
 
     def new_maze(self):
@@ -354,7 +360,7 @@ class QuestWindow(QMainWindow):
         self.board.setFocus()
 
     def _ready_message(self):
-        self.status_label.setText('Find the ancient gate.' if self.mode == 'Play' else 'Choose a search and watch its decisions.')
+        self.status_label.setText('Find the enchanted waygate.' if self.mode == 'Play' else 'Choose a search and watch its decisions.')
         self.notes_label.setText(LEVELS[self.level_index].concept)
 
     def _refresh(self):
@@ -403,7 +409,7 @@ class QuestWindow(QMainWindow):
             else:
                 self.phase = 'complete'
                 self.overlay = list(self.maze.path)
-                self.status_label.setText('The search found the gate.')
+                self.status_label.setText('The search found the waygate.')
                 self.victory_text.setText(f'{max(0, len(self.overlay)-1)} steps in the route.\n{self.visits} cells explored; {self.retreats} backtracks.')
                 self.notes_label.setText('This maze is a tree: there is one route between any pair of cells. DFS and BFS find the same route, but explore in a different order.')
             self._refresh()
@@ -480,11 +486,11 @@ class QuestWindow(QMainWindow):
         self.trail.append(self.player)
         self.overlay = []
         self.moves += 1
-        self.status_label.setText('Follow the passages to the gate.')
+        self.status_label.setText('Follow the passages to the waygate.')
         if self.player == (self.maze.rows-1, self.maze.cols-1):
             self.phase = 'complete'
             direct = len(self.maze.route_from((0,0)))-1
-            self.status_label.setText('You found the exit. The gate is open.')
+            self.status_label.setText('You found the exit. The waygate is open.')
             self.victory_text.setText(f'{self.moves} moves · direct route {direct}\n{self.hints} hints used' + ('\nAn unaided journey.' if self.hints == 0 else '\nThe lantern helped you find your way.'))
             self.notes_label.setText('Continue to the next chapter, or switch to Observe to compare your route with a search algorithm.')
         self._refresh()

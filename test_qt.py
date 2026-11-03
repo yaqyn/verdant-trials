@@ -41,6 +41,12 @@ class QuestWindowTests(unittest.TestCase):
         self.window.skip_generation()
         self.assertEqual(self.window.phase, 'ready')
 
+    def test_daylight_default_and_bundled_wallpaper(self):
+        self.assertEqual(self.window.theme, 'light')
+        self.assertEqual(self.window.board.mode, 'light')
+        self.assertFalse(self.window.board._frame.isNull())
+        self.assertEqual(self.window.theme_button.text(), 'Moonlight')
+
     def test_player_route_completes_quest_and_next_chapter(self):
         self.ready()
         window = self.window
