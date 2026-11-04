@@ -253,7 +253,7 @@ class SceneTests(unittest.TestCase):
         self.assertGreater(len(set(edge)),8)
         self.assertTrue(all(a >= b for a,b in zip(edge,edge[1:])))
 
-    def test_discovered_lamp_removes_fog_away_from_player(self):
+    def test_unvisited_lamps_are_visible_but_weaker_than_player(self):
         from PySide6.QtCore import QPointF, Qt
         from PySide6.QtGui import QImage, QPainter
         self.window.chapter_box.setCurrentIndex(1)
@@ -261,7 +261,7 @@ class SceneTests(unittest.TestCase):
         board = self.window.board
         board.reduced_motion = True
         board.grab()
-        # The entrance lamp remains discovered while the explorer is far away.
+        # Lamp sources remain visible even after clearing discovery.
         board.visualPosition = QPointF(board.maze.cols-1,board.maze.rows-1)
         _, floor, cell = board._geometry()
         def entrance_alpha():
@@ -275,8 +275,13 @@ class SceneTests(unittest.TestCase):
         lit = entrance_alpha()
         board.discovered.clear()
         board._fog_key = None
+        self.assertEqual(lit,entrance_alpha())
+        board._lamp_strength = lambda index,elapsed: 0
+        board._fog_key = None
         unlit = entrance_alpha()
         self.assertLess(lit,unlit-60)
+        self.assertGreater(lit,15)
+        self.assertTrue(all(radius < 3.4 for radius in board._lamp_radii))
         self.assertEqual((int(board.lamps[-1][1]),int(board.lamps[-1][0])),
                          (board.maze.rows-1,board.maze.cols-1))
         # The exit pool has a different spectral balance from warm lamps.
@@ -286,3 +291,25 @@ class SceneTests(unittest.TestCase):
         cool = cool.pixelColor(cool.width()//2,cool.height()//2)
         self.assertGreater(warm.red(),warm.blue())
         self.assertGreater(cool.blue(),cool.red())
+
+    def test_local_fog_patch_has_no_transparent_rectangular_seam(self):
+        from maze import Maze
+        from PySide6.QtCore import Qt
+        from PySide6.QtGui import QImage, QPainter
+        board = self.window.board
+        board.resize(803,607)
+        maze = Maze(8,10)
+        board.configure_scene(True,True)
+        board.set_state(maze,(0,0),[],[],set(),set())
+        board.grab()
+        _, floor, cell = board._geometry()
+        image = QImage(board.size(),QImage.Format.Format_ARGB32)
+        image.fill(Qt.GlobalColor.transparent)
+        painter = QPainter(image)
+        board._draw_fog(painter,floor,cell)
+        painter.end()
+        core = board._fog_patch_core
+        x = round(floor.left()+(core.right()-6)*cell/board._fog_resolution)
+        y = round(floor.top()+cell*2)
+        self.assertTrue(all(image.pixelColor(x+offset,y).alpha() == 255
+                            for offset in range(-3,4)))

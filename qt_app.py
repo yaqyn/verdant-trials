@@ -534,4 +534,5 @@ class QuestWindow(QMainWindow):
     def closeEvent(self, event):
         self.closed = True
         self.timer.stop()
+        self.board.close()
         super().closeEvent(event)

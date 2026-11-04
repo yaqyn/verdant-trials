@@ -1,14 +1,18 @@
 """Top-down castle cutaway with cached masonry and wall-aware 2D lighting."""
 import math
+import os
+from collections import deque, OrderedDict
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from random import Random
 import time
 
-from PySide6.QtCore import QEasingCurve, QPointF, Property, QPropertyAnimation, QRectF, QSize, Qt, QTimer, Signal
-from PySide6.QtGui import QColor, QImage, QBrush, QLinearGradient, QPainter, QPainterPath, QPen, QPixmap, QPolygonF, QRadialGradient
-from PySide6.QtSvg import QSvgRenderer
-from PySide6.QtWidgets import QWidget, QGraphicsBlurEffect, QGraphicsPixmapItem, QGraphicsScene
-from lighting import wall_segments, visibility_polygon, visible_cells, lamp_positions
+from PySide6.QtCore import QAbstractAnimation, QEasingCurve, QPointF, Property, QPropertyAnimation, QRectF, QSize, Qt, QTimer, Signal
+from PySide6.QtGui import QColor, QImage, QBrush, QLinearGradient, QPainter, QPainterPath, QPen, QPixmap, QPolygonF, QRadialGradient, QRegion
+from PySide6.QtOpenGLWidgets import QOpenGLWidget
+from PySide6.QtWidgets import QWidget
+from lighting import wall_segments, grid_visibility_polygon, visible_cells, lamp_positions
+from light_field import LIGHT_STOPS, feather_image, prepare_player_field
 
 ASSETS = Path(__file__).resolve().parent / 'assets'
 
@@ -32,7 +36,35 @@ BOARD_COLORS = {
 }
 
 
-class MazeBoard(QWidget):
+class _RasterCanvas(QWidget):
+    renderer = 'raster'
+
+    def paintEvent(self, event):
+        self._paint_scene(event)
+
+
+class _OpenGLCanvas(QOpenGLWidget):
+    renderer = 'opengl'
+
+    def __init__(self,parent=None):
+        super().__init__(parent)
+        self.setUpdateBehavior(QOpenGLWidget.UpdateBehavior.PartialUpdate)
+
+    def paintEvent(self,event):
+        self._gl_damage = event.region()
+        super().paintEvent(event)
+
+    def paintGL(self):
+        self._paint_scene(None)
+
+
+# Raster rendering remains available for headless verification and systems
+# without a working OpenGL context. Native desktops use the accelerated canvas.
+_headless = os.environ.get('QT_QPA_PLATFORM','').split(':')[0] in ('offscreen','minimal')
+_Canvas = _OpenGLCanvas if os.environ.get('MAZE_RENDERER','opengl') != 'raster' and not _headless else _RasterCanvas
+
+
+class MazeBoard(_Canvas):
     """Render a castle plan; traversal and movement rules remain in the engine."""
     moved = Signal(str)
 
@@ -50,6 +82,7 @@ class MazeBoard(QWidget):
         self.reduced_motion = False
         self.mode = 'dark'
         self.scene_ready = False
+        self._scene_full_repaint = True
         self.play_mode = True
         self.fog_enabled = False
         self.ambient_motion = True
@@ -68,6 +101,12 @@ class MazeBoard(QWidget):
         self._scene_started = time.monotonic()
         self._facing = (0, 1)
         self._visual_position = QPointF(0, 0)
+        self._motion_queue = deque()
+        self._active_target = None
+        self._motion_carry = 0
+        self._leg_clock = time.monotonic()
+        self._held_direction = None
+        self._pending_direction = None
         self._static_key = None
         self._static = QPixmap()
         self._masonry = QPixmap()
@@ -75,10 +114,19 @@ class MazeBoard(QWidget):
         self._wallpapers = {name: QPixmap(str(ASSETS / filename)) for name, filename in
                             (('light', 'verdant-world.png'), ('dark', 'verdant-night.png'))}
         self._frame = self._wallpapers[self.mode]
-        self._gate = QSvgRenderer(str(ASSETS / 'icons/waygate.svg'), self)
         self._animation = QPropertyAnimation(self, b'visualPosition', self)
         self._animation.setDuration(145)
-        self._animation.setEasingCurve(QEasingCurve.Type.InOutSine)
+        self._animation.setEasingCurve(QEasingCurve.Type.Linear)
+        self._animation.finished.connect(self._motion_finished)
+        self._held_timer = QTimer(self)
+        self._held_timer.setSingleShot(True)
+        self._held_timer.setInterval(145)
+        self._held_timer.timeout.connect(self._repeat_reduced_motion)
+        self._field_worker = ThreadPoolExecutor(max_workers=1,thread_name_prefix='maze-light')
+        self._field_future = None
+        self._prefetch_timer = QTimer(self)
+        self._prefetch_timer.setSingleShot(True)
+        self._prefetch_timer.timeout.connect(self._prefetch_light)
         self.effects_timer = QTimer(self)
         self.effects_timer.setInterval(16)
         self.effects_timer.setTimerType(Qt.TimerType.PreciseTimer)
@@ -94,18 +142,21 @@ class MazeBoard(QWidget):
     def _get_visual_position(self):
         return self._visual_position
 
+    def _update_light_area(self, previous, value):
+        _, board, size = self._geometry()
+        radius = size*3.7
+        def footprint(position):
+            center = QPointF(board.left()+(position.x()+.5)*size,
+                             board.top()+(position.y()+.5)*size)
+            return QRectF(center.x()-radius,center.y()-radius,radius*2,radius*2)
+        changed = footprint(previous).united(footprint(value)).intersected(board.adjusted(-16,-16,16,16))
+        self.update(changed.toAlignedRect())
+
     def _set_visual_position(self, value):
         previous = self._visual_position
         self._visual_position = value
-        self._player_light_key = None
         if self.maze is not None and self.scene_ready:
-            _, board, size = self._geometry()
-            radius = size*3.7
-            def footprint(position):
-                center = QPointF(board.left()+(position.x()+.5)*size,
-                                 board.top()+(position.y()+.5)*size)
-                return QRectF(center.x()-radius,center.y()-radius,radius*2,radius*2)
-            self.update(footprint(previous).united(footprint(value)).toAlignedRect())
+            self._update_light_area(previous,value)
         else:
             self.update()
 
@@ -113,6 +164,8 @@ class MazeBoard(QWidget):
 
     def configure_scene(self, ready, play_mode, fog_enabled=True, ambient_motion=True):
         """Configure presentation before set_state without restarting steady lamps."""
+        if (self.scene_ready,self.play_mode,self.fog_enabled,self.ambient_motion) != (bool(ready),bool(play_mode),bool(fog_enabled),bool(ambient_motion)):
+            self._scene_full_repaint = True
         if self.play_mode != play_mode:
             self.discovered.clear()
             self._memory_origins.clear()
@@ -148,7 +201,16 @@ class MazeBoard(QWidget):
                  if elapsed < 2.5 else round((.97+.025*math.sin(elapsed*.85))*255))
         if state != getattr(self,'_ambient_state',None):
             self._ambient_state = state
-            self.update()
+            if self.maze is None or not self.lamps:
+                return
+            _,board,size = self._geometry()
+            region = QRegion()
+            for position,radius in zip(self.lamps,self._lamp_radii):
+                center = self._point(position,board,size)
+                extent = (radius+.25)*size
+                region |= QRegion(QRectF(center.x()-extent,center.y()-extent,
+                                        extent*2,extent*2).toAlignedRect())
+            self.update(region)
 
     def set_theme(self, mode):
         if mode not in BOARD_COLORS:
@@ -161,6 +223,8 @@ class MazeBoard(QWidget):
     def set_state(self, maze, player, trail, overlay, explored, backtracked, complete=False):
         changed_board = maze is not self.maze
         previous = self.player
+        previous_overlay, previous_complete = self.overlay, self.complete
+        previous_topology = self._topology
         self.maze, self.player = maze, tuple(player)
         self.trail, self.overlay = list(trail), list(overlay)
         self.explored, self.backtracked = set(explored), set(backtracked)
@@ -175,24 +239,86 @@ class MazeBoard(QWidget):
             self._scene_key = self._visibility_key = None
             self._scene_started = time.monotonic()
         if changed_board or self.reduced_motion or not self.play_mode:
-            self._animation.stop()
+            self._cancel_motion(clear_input=changed_board or not self.play_mode)
             self._set_visual_position(target)
         elif previous != self.player:
-            self._animation.stop()
-            origin = QPointF(previous[1], previous[0])
-            self._set_visual_position(origin)
-            self._facing = (player[0]-previous[0], player[1]-previous[1])
-            if abs(self._facing[0])+abs(self._facing[1]) == 1:
-                self._animation.setStartValue(origin)
-                self._animation.setEndValue(target)
-                self._animation.start()
+            delta = (player[0]-previous[0], player[1]-previous[1])
+            if abs(delta[0])+abs(delta[1]) == 1:
+                self._motion_queue.append(target)
+                if self._animation.state() != QAbstractAnimation.State.Running:
+                    self._start_next_leg()
             else:
+                self._cancel_motion()
                 self._set_visual_position(target)
         self._topology = tuple(frozenset(cell.walls) for row in maze.grid for cell in row)
         if self.scene_ready:
             self._prepare_lighting()
         self._sync_effects_timer()
-        self.update()
+        full = (changed_board or not self.scene_ready or not self.play_mode or self._scene_full_repaint
+                or previous_overlay != self.overlay or previous_complete != complete
+                or previous_topology != self._topology
+                or getattr(self,'_previous_motion',None) != self.reduced_motion)
+        self._previous_motion = self.reduced_motion
+        self._scene_full_repaint = False
+        if full:
+            self.update()
+        else:
+            self._update_light_area(QPointF(previous[1],previous[0]),target)
+
+    def _clear_held_input(self):
+        self._held_timer.stop()
+        self._held_direction = self._pending_direction = None
+
+    def _cancel_motion(self, clear_input=True):
+        self._animation.stop()
+        self._prefetch_timer.stop()
+        if self._field_future is not None:
+            self._field_future.cancel()
+            self._field_future = None
+        self._motion_queue.clear()
+        self._active_target = None
+        self._motion_carry = 0
+        if clear_input:
+            self._clear_held_input()
+
+    def _start_next_leg(self):
+        if not self._motion_queue:
+            return
+        target = self._motion_queue.popleft()
+        origin = QPointF(self._visual_position)
+        self._active_target = target
+        self._facing = (round(target.y()-origin.y()), round(target.x()-origin.x()))
+        carry = self._motion_carry
+        self._motion_carry = 0
+        self._leg_clock = time.monotonic()-carry/1000
+        self._animation.setStartValue(origin)
+        self._animation.setEndValue(target)
+        self._animation.start()
+        if carry:
+            self._animation.setCurrentTime(carry)
+
+    def _motion_finished(self):
+        # Preserve time left over from the display tick. Dropping it on every
+        # 145ms cell caused a repeated hesitation even with fast paint times.
+        elapsed = (time.monotonic()-self._leg_clock)*1000
+        self._motion_carry = max(0,min(self._animation.duration()//2,
+                                      round(elapsed-self._animation.duration())))
+        self._active_target = None
+        if self._motion_queue:
+            self._start_next_leg()
+            return
+        direction = self._pending_direction or self._held_direction
+        self._pending_direction = None
+        if direction is not None and self.play_mode and not self.complete:
+            self.moved.emit(direction)
+        else:
+            self._motion_carry = 0
+
+    def _repeat_reduced_motion(self):
+        if self._held_direction is not None and self.play_mode and not self.complete and self.reduced_motion:
+            self.moved.emit(self._held_direction)
+            if self._held_direction is not None:
+                self._held_timer.start()
 
     def _prepare_lighting(self):
         key = (id(self.maze), self._topology)
@@ -200,27 +326,26 @@ class MazeBoard(QWidget):
             self._scene_key = key
             self._segments = wall_segments(self.maze)
             self.lamps = list(lamp_positions(self.maze, max_lamps=14))
-            self.lamps[-1] = (self.maze.cols-.24,self.maze.rows-.5)
-            self._lamp_radii = [2.8]*(len(self.lamps)-1)+[3.1]
-            self._light_polygons = [(visibility_polygon(pos,self._segments,radius,rays=64),)
+            self.lamps[-1] = (self.maze.cols-.5,self.maze.rows-.5)
+            self._lamp_radii = [1.65]*(len(self.lamps)-1)+[2.05]
+            self._light_polygons = [(grid_visibility_polygon(self.maze,pos,radius,rays=64,segments=self._segments),)
                                     for pos,radius in zip(self.lamps,self._lamp_radii)]
             self._lamp_images = [self._pool_image(pos, polygons, radius,
-                                 QColor(112,238,220,140) if index == len(self.lamps)-1 else QColor(255,192,92,118))
+                                 QColor(112,238,220,50) if index == len(self.lamps)-1 else QColor(255,192,92,35))
                                  for index,(pos,polygons,radius) in enumerate(zip(self.lamps,self._light_polygons,self._lamp_radii))]
-            self._lamp_coverage = [self._pool_image(pos,polygons,radius,QColor(255,255,255,255))
+            self._lamp_coverage = [self._pool_image(pos,polygons,radius,QColor(255,255,255,185))
                                    for pos,polygons,radius in zip(self.lamps,self._light_polygons,self._lamp_radii)]
-            self._player_light_key = None
             self._visibility_key = None
         key = (self.player, tuple(self.overlay), self.play_mode)
         if self._visibility_key != key:
             self._visibility_key = key
-            self.visible = visible_cells(self.maze, self.player, radius=3.4)
-            self.discovered.update(self.visible)
-            self._memory_origins.add(self.player)
             x,y = self.player[1]+.5,self.player[0]+.5
             self._local_segments = tuple(w for w in self._segments
                 if max(w[0],w[2]) >= x-4.5 and min(w[0],w[2]) <= x+4.5
                 and max(w[1],w[3]) >= y-4.5 and min(w[1],w[3]) <= y+4.5)
+            self.visible = visible_cells(self.maze,self.player,radius=3.4)
+            self.discovered.update(self.visible)
+            self._memory_origins.add(self.player)
             # Assistance deliberately reveals the requested route through the mist.
             self.discovered.update(self.overlay)
 
@@ -369,37 +494,18 @@ class MazeBoard(QWidget):
         return fade*fade*(3-2*fade)
 
     def _player_light(self):
-        origin = (self._visual_position.x()+.5, self._visual_position.y()+.5)
-        if getattr(self, '_player_light_key', None) != origin:
-            self._player_light_key = origin
-            self._player_light_polygons = (visibility_polygon(origin,
-                getattr(self,'_local_segments',self._segments),3.4,rays=32),)
-        return origin, self._player_light_polygons
+        # Geometry is sampled and cached by _player_coverage. Between samples,
+        # Qt blends the light fields instead of Python recasting every frame.
+        return (self._visual_position.x()+.5,self._visual_position.y()+.5), ()
 
     def _soften_image(self, source, radius=2.5):
-        """Qt's native blur makes continuous feathering, including shadow edges.
+        """Feather premultiplied coverage with a compact compiled Gaussian pass.
 
-        Work on compact coverage textures, then cache the result. Bilinear
-        enlargement alone cannot remove a stair-stepped visibility boundary.
+        Rendering QGraphicsBlurEffect through a scene stalled small chapters
+        during cache misses. This path does no scene traversal or GPU readback.
         """
-        if not hasattr(self,'_soft_scene'):
-            self._soft_scene = QGraphicsScene(self)
-            self._soft_item = QGraphicsPixmapItem()
-            self._soft_blur = QGraphicsBlurEffect()
-            self._soft_blur.setBlurHints(QGraphicsBlurEffect.BlurHint.QualityHint)
-            self._soft_item.setGraphicsEffect(self._soft_blur)
-            self._soft_scene.addItem(self._soft_item)
-        source = QPixmap.fromImage(source) if isinstance(source,QImage) else source
-        self._soft_item.setPixmap(source)
-        self._soft_blur.setBlurRadius(radius)
-        area = QRectF(0,0,source.width(),source.height())
-        self._soft_scene.setSceneRect(area)
-        result = QPixmap(source.size())
-        result.fill(Qt.GlobalColor.transparent)
-        painter = QPainter(result)
-        self._soft_scene.render(painter,area,area)
-        painter.end()
-        return result
+        image = source.toImage() if isinstance(source,QPixmap) else source
+        return QPixmap.fromImage(feather_image(image,radius))
 
     def _pool_image(self, origin, polygons, radius, color, resolution=32):
         # Higher-density gradient texture with native feathering; cached per lamp.
@@ -411,15 +517,105 @@ class MazeBoard(QWidget):
         painter.translate(extent-origin[0]*resolution,extent-origin[1]*resolution)
         self._radial_pool(painter,QRectF(0,0,0,0),resolution,origin,polygons,radius,color)
         painter.end()
-        return self._soften_image(image), QRectF(origin[0]-extent/resolution,origin[1]-extent/resolution,
+        return self._soften_image(image,max(.8,resolution*.025)), QRectF(origin[0]-extent/resolution,origin[1]-extent/resolution,
                              extent*2/resolution,extent*2/resolution)
+
+    def _field_sample(self, point, resolution):
+        if point not in self._coverage_samples:
+            near_player = abs(point[0]-self.player[1]-.5) <= 1.1 and abs(point[1]-self.player[0]-.5) <= 1.1
+            segments = self._local_segments if near_player else self._segments
+            image,area = prepare_player_field(self.maze,point,segments,resolution)
+            self._coverage_samples[point] = (QPixmap.fromImage(image),QRectF(*area))
+            if len(self._coverage_samples) > 96:
+                self._coverage_samples.popitem(last=False)
+        self._coverage_samples.move_to_end(point)
+        return self._coverage_samples[point]
+
+    def _prefetch_light(self):
+        if self._field_future is not None:
+            if not self._field_future.done():
+                self._prefetch_timer.start(2)
+                return
+            future,request = self._field_future,self._field_request
+            self._field_future = None
+            point,resolution,key = request
+            if not future.cancelled() and key == self._coverage_samples_key:
+                image,area = future.result()
+                self._coverage_samples[point] = (QPixmap.fromImage(image),QRectF(*area))
+                if len(self._coverage_samples) > 96:
+                    self._coverage_samples.popitem(last=False)
+            return
+        point,resolution,key = self._queued_light_sample
+        if (self.isVisible() and key == self._coverage_samples_key
+                and self._animation.state() == QAbstractAnimation.State.Running):
+            self._field_request = (point,resolution,key)
+            self._field_future = self._field_worker.submit(prepare_player_field,
+                self.maze,point,self._segments,resolution)
+            self._prefetch_timer.start(2)
 
     def _player_coverage(self, origin, polygons, resolution):
         key = (origin,self._scene_key,resolution)
-        if getattr(self,'_coverage_key',None) != key:
-            self._coverage_key = key
-            self._personal_coverage = self._pool_image(origin,polygons,3.4,
-                                                       QColor(255,255,255,255),resolution)
+        if getattr(self,'_coverage_key',None) == key:
+            return self._personal_coverage
+        self._coverage_key = key
+        cache_key = (self._scene_key,resolution)
+        if getattr(self,'_coverage_samples_key',None) != cache_key:
+            self._coverage_samples_key = cache_key
+            self._coverage_samples = OrderedDict()
+        axis = (0 if abs(origin[0]-(math.floor(origin[0])+.5)) > 1e-6 else
+                1 if abs(origin[1]-(math.floor(origin[1])+.5)) > 1e-6 else
+                0 if self._facing[1] else 1)
+        lower = math.floor(origin[axis]*2+1e-8)/2
+        mix = max(0.,min(1.,(origin[axis]-lower)*2))
+        points = []
+        for coordinate,weight in ((lower,1-mix),(lower+.5,mix)):
+            if weight < 1e-6:
+                continue
+            point = list(origin)
+            point[axis] = coordinate
+            point = tuple(round(value,6) for value in point)
+            points.append((self._field_sample(point,resolution),weight))
+        if len(points) == 1:
+            self._personal_coverage = points[0][0]
+        else:
+            area = points[0][0][1].united(points[1][0][1])
+            image = QPixmap(math.ceil(area.width()*resolution),math.ceil(area.height()*resolution))
+            image.fill(Qt.GlobalColor.transparent)
+            blend = QPainter(image)
+            blend.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
+            blend.setCompositionMode(QPainter.CompositionMode.CompositionMode_Plus)
+            offset = QRectF(-area.x()*resolution,-area.y()*resolution,0,0)
+            for index,(pool,weight) in enumerate(points):
+                if index == 0:
+                    blend.setOpacity(weight)
+                    self._draw_pool_image(blend,offset,resolution,pool)
+                else:
+                    # Apply weight to the source before Plus composition. Qt's
+                    # painter opacity otherwise attenuates the accumulated
+                    # destination and leaves the character's feet in darkness.
+                    weighted = pool[0].copy()
+                    alpha = QPainter(weighted)
+                    alpha.setCompositionMode(QPainter.CompositionMode.CompositionMode_DestinationIn)
+                    alpha.fillRect(weighted.rect(),QColor(0,0,0,round(weight*255)))
+                    alpha.end()
+                    blend.setOpacity(1)
+                    self._draw_pool_image(blend,offset,resolution,(weighted,pool[1]))
+            blend.end()
+            area.setWidth(image.width()/resolution)
+            area.setHeight(image.height()/resolution)
+            self._personal_coverage = (image,area)
+        if (self._active_target is not None and not self._prefetch_timer.isActive()
+                and self._animation.state() == QAbstractAnimation.State.Running):
+            step = self._facing[1] if axis == 0 else self._facing[0]
+            coordinate = (lower+.5 if mix < 1e-6 else lower+1) if step > 0 else lower-.5
+            end = (self._active_target.x() if axis == 0 else self._active_target.y())+.5
+            if step and 0 < (coordinate-origin[axis])*step <= (end-origin[axis])*step+1e-6:
+                point = list(origin)
+                point[axis] = coordinate
+                point = tuple(round(value,6) for value in point)
+                if point not in self._coverage_samples:
+                    self._queued_light_sample = (point,resolution,cache_key)
+                    self._prefetch_timer.start(0)
         return self._personal_coverage
 
     def _draw_pool_image(self, painter, board, size, pool):
@@ -431,7 +627,7 @@ class MazeBoard(QWidget):
     def _radial_pool(self, painter, board, size, origin, polygons, radius, color):
         center = self._point(origin, board, size)
         gradient = QRadialGradient(center, radius*size)
-        for stop, strength in ((0,1),(.12,1),(.4,.55),(.68,.16),(1,0)):
+        for stop, strength in LIGHT_STOPS:
             shade = QColor(color)
             shade.setAlphaF(color.alphaF()*strength)
             gradient.setColorAt(stop, shade)
@@ -449,7 +645,7 @@ class MazeBoard(QWidget):
         elapsed = time.monotonic()-self._scene_started
         steady = elapsed > 2.5 or self.reduced_motion or not self.ambient_motion
         p.save()
-        p.setClipRect(board)
+        p.setClipRect(board,Qt.ClipOperation.IntersectClip)
         if steady:
             key = (self._scene_key,self.width(),self.height(),self.devicePixelRatioF(),self.mode)
             if self._lamp_layer_key != key:
@@ -470,7 +666,7 @@ class MazeBoard(QWidget):
         p.setOpacity(1)
         if self.play_mode:
             origin, polygons = self._player_light()
-            resolution = max(12,min(48,math.ceil(size*self.devicePixelRatioF())))
+            resolution = max(12,min(32,math.ceil(size*self.devicePixelRatioF())))
             if getattr(self,'_personal_pool_key',None) != (origin,self._scene_key,resolution):
                 self._personal_pool_key = (origin,self._scene_key,resolution)
                 coverage, rect = self._player_coverage(origin,polygons,resolution)
@@ -557,25 +753,34 @@ class MazeBoard(QWidget):
     def _draw_fog(self, p, board, size):
         if not (self.scene_ready and self.play_mode and self.fog_enabled) or self.complete:
             return
-        resolution, padding = max(12,min(48,math.ceil(size*self.devicePixelRatioF()))), 6
+        resolution, padding = max(12,min(32,math.ceil(size*self.devicePixelRatioF()))), 6
         self._fog_resolution = resolution
         memory_key = (id(self.maze), self._scene_key, self.play_mode,resolution)
         if getattr(self,'_fog_memory_key',None) != memory_key:
             self._fog_memory_key = memory_key
             self._fog_memory = QImage(self.maze.cols*resolution+padding*2,
-                                     self.maze.rows*resolution+padding*2,QImage.Format.Format_RGB32)
+                                     self.maze.rows*resolution+padding*2,QImage.Format.Format_Grayscale8)
             self._fog_memory.fill(Qt.GlobalColor.white)
             self._recorded_origins = set()
+            self._fog_base = QImage(self._fog_memory.size(),QImage.Format.Format_ARGB32_Premultiplied)
+            self._fog_base.fill(QColor(12,20,23))
             self._fog_key = None
+        self._fog_changed_rect = None
         pending = self._memory_origins-self._recorded_origins
         if pending:
             memory = QPainter(self._fog_memory)
             memory.setRenderHint(QPainter.RenderHint.Antialiasing)
             memory.setCompositionMode(QPainter.CompositionMode.CompositionMode_Darken)
             memory.translate(padding,padding)
+            changed = QRectF()
             for row,col in pending:
+                extent = 3.4*resolution+8
+                center_px = QPointF(padding+(col+.5)*resolution,padding+(row+.5)*resolution)
+                patch = QRectF(center_px.x()-extent,center_px.y()-extent,extent*2,extent*2)
+                changed = patch if changed.isNull() else changed.united(patch)
                 origin = (col+.5,row+.5)
-                polygon = visibility_polygon(origin,self._segments,3.4,rays=64)
+                nearby = self._local_segments if abs(row-self.player[0])+abs(col-self.player[1]) <= 1 else self._segments
+                polygon = grid_visibility_polygon(self.maze,origin,3.4,rays=32,segments=nearby)
                 memory.save()
                 memory.setClipPath(self._polygon_path(polygon,QRectF(),resolution))
                 center = QPointF(origin[0]*resolution,origin[1]*resolution)
@@ -589,30 +794,46 @@ class MazeBoard(QWidget):
             memory.end()
             self._recorded_origins.update(pending)
             self._fog_key = None
-            self._fog_base = QImage(self._fog_memory.size(),QImage.Format.Format_ARGB32_Premultiplied)
-            self._fog_base.fill(QColor(12,20,23))
-            self._fog_base.setAlphaChannel(self._fog_memory)
-            self._fog_base = self._soften_image(self._fog_base,max(2.5,resolution*.08)).toImage()
+            # Convert and feather only the changed footprint. setAlphaChannel
+            # on the entire map caused a stall at every newly visited cell.
+            rect = changed.toAlignedRect().intersected(self._fog_memory.rect())
+            alpha = self._fog_memory.copy(rect)
+            patch = QImage(alpha.size(),QImage.Format.Format_ARGB32_Premultiplied)
+            patch.fill(QColor(12,20,23))
+            patch.setAlphaChannel(alpha)
+            softened = self._soften_image(patch,max(.8,resolution*.025))
+            update = QPainter(self._fog_base)
+            update.setCompositionMode(QPainter.CompositionMode.CompositionMode_Source)
+            safe = rect.adjusted(6,6,-6,-6)
+            source = safe.translated(-rect.topLeft())
+            update.drawPixmap(QRectF(safe),softened,QRectF(source))
+            update.end()
+            self._fog_changed_rect = safe
         origin, polygons = self._player_light()
         elapsed = time.monotonic()-self._scene_started
-        known_lamps = tuple(index for index,position in enumerate(self.lamps)
-                            if (int(position[1]),int(position[0])) in self.discovered)
+        known_lamps = tuple(range(len(self.lamps)))
         fades = tuple(round(self._lamp_strength(index,elapsed)*255) for index in known_lamps)
-        key = (origin,tuple(self.overlay),len(self._recorded_origins),fades)
-        if self._fog_key != key:
-            self._fog_key = key
-            image = self._fog_base.copy()
+        control_key = (memory_key,tuple(self.overlay),fades)
+        base_key = (control_key,len(self._recorded_origins))
+        full = getattr(self,'_fog_lit_key',None) != control_key
+        changed = self._fog_changed_rect
+        if full or changed is not None:
+            self._fog_lit_key = control_key
+            rect = self._fog_base.rect() if full else changed
+            image = self._fog_base.copy(rect)
             mask = QPainter(image)
             mask.setRenderHint(QPainter.RenderHint.Antialiasing)
-            mask.translate(padding,padding)
+            mask.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
+            mask.translate(padding-rect.x(),padding-rect.y())
             mask.setCompositionMode(QPainter.CompositionMode.CompositionMode_DestinationOut)
-            # The same feathered coverage texture drives both visible glow and
-            # fog removal. Only the small moving light is blurred each frame.
-            self._draw_pool_image(mask,QRectF(),resolution,self._player_coverage(origin,polygons,resolution))
-            # Once discovered, a lamp remains an independent source of sight.
-            # Its radial illumination must remove fog, not merely tint a floor
-            # that an opaque fog layer subsequently covers.
             for index,fade in zip(known_lamps,fades):
+                position = self.lamps[index]
+                radius = self._lamp_radii[index]
+                footprint = QRectF(padding+(position[0]-radius)*resolution,
+                                   padding+(position[1]-radius)*resolution,
+                                   radius*2*resolution,radius*2*resolution)
+                if not footprint.intersects(QRectF(rect)):
+                    continue
                 mask.setOpacity(fade/255)
                 self._draw_pool_image(mask,QRectF(),resolution,self._lamp_coverage[index])
             mask.setOpacity(1)
@@ -628,12 +849,83 @@ class MazeBoard(QWidget):
                     mask.setBrush(QColor(0,0,0,255))
                     mask.drawEllipse(self._center(self.overlay[0],QRectF(),resolution),resolution*.38,resolution*.38)
             mask.end()
+            if full:
+                self._fog_lit_base = image
+                self._fog_tiles = {}
+            else:
+                patch = QPixmap.fromImage(image)
+                update = QPainter(self._fog_lit_base)
+                update.setCompositionMode(QPainter.CompositionMode.CompositionMode_Source)
+                update.drawPixmap(rect.topLeft(),patch)
+                update.end()
+                # Reupload only affected small textures. Updating a single
+                # map-sized pixmap forced a full GPU upload at every new cell.
+                for key,(_,sample,_) in list(self._fog_tiles.items()):
+                    if sample.intersects(rect):
+                        del self._fog_tiles[key]
+            self._fog_key = None
+        key = (origin,base_key)
+        if self._fog_key != key:
+            self._fog_key = key
+            coverage = self._player_coverage(origin,polygons,resolution)
+            footprint = coverage[1]
+            crop = QRectF(padding+footprint.x()*resolution,padding+footprint.y()*resolution,
+                          footprint.width()*resolution,footprint.height()*resolution)
+            core = crop.toAlignedRect().intersected(self._fog_lit_base.rect())
+            rect = core.adjusted(-2,-2,2,2).intersected(self._fog_lit_base.rect())
+            image = self._fog_lit_base.copy(rect)
+            mask = QPainter(image)
+            mask.setRenderHint(QPainter.RenderHint.Antialiasing)
+            mask.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
+            mask.translate(padding-rect.x(),padding-rect.y())
+            mask.setCompositionMode(QPainter.CompositionMode.CompositionMode_DestinationOut)
+            self._draw_pool_image(mask,QRectF(),resolution,coverage)
+            mask.end()
             self._fog_image = QPixmap.fromImage(image)
+            self._fog_patch_rect = rect
+            self._fog_patch_core = core
         p.save()
         p.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
-        p.setClipRect(board.adjusted(-self._wall_width/2,-self._wall_width/2,self._wall_width/2,self._wall_width/2))
-        margin = padding*size/resolution
-        p.drawPixmap(board.adjusted(-margin,-margin,margin,margin),self._fog_image,QRectF(self._fog_image.rect()))
+        bounds = board.adjusted(-self._wall_width/2,-self._wall_width/2,self._wall_width/2,self._wall_width/2)
+        p.setClipRect(bounds,Qt.ClipOperation.IntersectClip)
+        rect = self._fog_patch_rect
+        patch = QRectF(board.left()+(rect.x()-padding)*size/resolution,
+                       board.top()+(rect.y()-padding)*size/resolution,
+                       rect.width()*size/resolution,rect.height()*size/resolution)
+        outside = QPainterPath()
+        outside.addRect(bounds)
+        inside = QPainterPath()
+        core = self._fog_patch_core
+        inside.addRect(QRectF(board.left()+(core.x()-padding)*size/resolution,
+                             board.top()+(core.y()-padding)*size/resolution,
+                             core.width()*size/resolution,core.height()*size/resolution))
+        p.save()
+        p.setClipPath(outside.subtracted(inside),Qt.ClipOperation.IntersectClip)
+        visible = p.clipBoundingRect()
+        tile_size = 128
+        for y in range(0,self._fog_lit_base.height(),tile_size):
+            for x in range(0,self._fog_lit_base.width(),tile_size):
+                core = QRectF(x,y,tile_size,tile_size).toAlignedRect().intersected(self._fog_lit_base.rect())
+                target = QRectF(board.left()+(core.x()-padding)*size/resolution,
+                                board.top()+(core.y()-padding)*size/resolution,
+                                core.width()*size/resolution,core.height()*size/resolution)
+                if not target.intersects(visible):
+                    continue
+                key = (x,y)
+                if key not in self._fog_tiles:
+                    sample = core.adjusted(-2,-2,2,2).intersected(self._fog_lit_base.rect())
+                    self._fog_tiles[key] = (core,sample,QPixmap.fromImage(self._fog_lit_base.copy(sample)))
+                _,sample,tile = self._fog_tiles[key]
+                expanded = QRectF(board.left()+(sample.x()-padding)*size/resolution,
+                                  board.top()+(sample.y()-padding)*size/resolution,
+                                  sample.width()*size/resolution,sample.height()*size/resolution)
+                p.save()
+                p.setClipRect(target,Qt.ClipOperation.IntersectClip)
+                p.drawPixmap(expanded,tile,QRectF(tile.rect()))
+                p.restore()
+        p.restore()
+        p.setClipPath(inside,Qt.ClipOperation.IntersectClip)
+        p.drawPixmap(patch,self._fog_image,QRectF(self._fog_image.rect()))
         p.restore()
 
     def _draw_player(self, p, board, size):
@@ -737,28 +1029,40 @@ class MazeBoard(QWidget):
         p.restore()
 
     def _draw_marks(self, painter, board, size):
-        key = (self._marks_revision,self.width(),self.height(),self.devicePixelRatioF(),self.mode)
+        key = (self._marks_revision,self.width(),self.height(),self.mode)
         if getattr(self,'_marks_key',None) != key:
             self._marks_key = key
-            self._marks_layer = self._new_layer()
-            p = QPainter(self._marks_layer)
-            p.setRenderHint(QPainter.RenderHint.Antialiasing)
-            self._paint_marks(p,board,size)
-            p.end()
-        painter.drawPixmap(0,0,self._marks_layer)
+            inset = max(2,size*.12)
+            self._shade_paths = []
+            for positions,color in ((self.explored,QColor(80,141,145,56)),
+                                    (self.backtracked,QColor(154,118,86,67))):
+                path = QPainterPath()
+                for row,col in positions:
+                    path.addRect(QRectF(board.left()+col*size+inset,board.top()+row*size+inset,
+                                       max(0,size-inset*2),max(0,size-inset*2)))
+                self._shade_paths.append((path,color))
+            colors = BOARD_COLORS[self.mode]
+            self._route_paths = []
+            for route,color,width in ((self.trail,colors['trail'],max(1.5,size*.06)),
+                                      (self.overlay,colors['route'],max(2,size*.09))):
+                if len(route) < 2:
+                    continue
+                path = QPainterPath(self._center(route[0],board,size))
+                for point in route[1:]:
+                    path.lineTo(self._center(point,board,size))
+                self._route_paths.append((path,QPen(QColor(color),width,Qt.PenStyle.SolidLine,
+                                             Qt.PenCapStyle.RoundCap,Qt.PenJoinStyle.RoundJoin)))
+        for path,color in self._shade_paths:
+            painter.fillPath(path,color)
+        painter.setBrush(Qt.BrushStyle.NoBrush)
+        for path,pen in self._route_paths:
+            painter.setPen(pen)
+            painter.drawPath(path)
 
-    def _paint_marks(self, p, board, size):
-        inset = max(2,size*.12)
-        for positions,color in ((self.explored,QColor(80,141,145,56)),(self.backtracked,QColor(154,118,86,67))):
-            for r,c in positions:
-                p.fillRect(QRectF(board.left()+c*size+inset,board.top()+r*size+inset,
-                                  max(0,size-inset*2),max(0,size-inset*2)),color)
-        colors = BOARD_COLORS[self.mode]
-        self._draw_route(p,self.trail,board,size,colors['trail'],max(1.5,size*.06))
-        self._draw_route(p,self.overlay,board,size,colors['route'],max(2,size*.09))
-
-    def paintEvent(self, event):
+    def _paint_scene(self, event):
         p = QPainter(self)
+        if self.renderer == 'opengl' and hasattr(self,'_gl_damage'):
+            p.setClipRegion(self._gl_damage)
         p.setRenderHint(QPainter.RenderHint.Antialiasing)
         p.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
         area,board,size = self._geometry()
@@ -771,15 +1075,12 @@ class MazeBoard(QWidget):
         colors = BOARD_COLORS[self.mode]
         self._draw_lights(p,board,size)
         p.drawPixmap(0,0,self._masonry)
-        self._draw_lamp_fixtures(p,board,size)
         origin = self._center((0,0),board,size)
         p.setBrush(Qt.BrushStyle.NoBrush)
         p.setPen(QPen(QColor(colors['origin']),1.5))
         p.drawEllipse(origin,min(14,size*.23),min(14,size*.23))
-        goal = self._center((self.maze.rows-1,self.maze.cols-1),board,size)
-        icon = min(34,max(8,size*.65))
-        self._gate.render(p,QRectF(goal.x()-icon/2,goal.y()-icon/2,icon,icon))
         self._draw_fog(p,board,size)
+        self._draw_lamp_fixtures(p,board,size)
         self._draw_player(p,board,size)
         if self.hasFocus():
             p.setBrush(Qt.BrushStyle.NoBrush)
@@ -794,10 +1095,37 @@ class MazeBoard(QWidget):
         keys = {Qt.Key.Key_Up:'N',Qt.Key.Key_W:'N',Qt.Key.Key_Down:'S',Qt.Key.Key_S:'S',
                 Qt.Key.Key_Left:'W',Qt.Key.Key_A:'W',Qt.Key.Key_Right:'E',Qt.Key.Key_D:'E'}
         if event.key() in keys:
-            self.moved.emit(keys[event.key()])
+            if event.isAutoRepeat():
+                event.accept()
+                return
+            direction = keys[event.key()]
+            self._held_direction = direction
+            if self._animation.state() == QAbstractAnimation.State.Running:
+                # Keep one tap-turn; holding repeats at leg completion rather
+                # than the desktop's unrelated key-repeat delay and rate.
+                self._pending_direction = direction
+            else:
+                self.moved.emit(direction)
+                if self.reduced_motion and self._held_direction is not None:
+                    self._held_timer.start()
             event.accept()
         else:
             super().keyPressEvent(event)
+
+    def keyReleaseEvent(self,event):
+        keys = {Qt.Key.Key_Up:'N',Qt.Key.Key_W:'N',Qt.Key.Key_Down:'S',Qt.Key.Key_S:'S',
+                Qt.Key.Key_Left:'W',Qt.Key.Key_A:'W',Qt.Key.Key_Right:'E',Qt.Key.Key_D:'E'}
+        if event.key() in keys:
+            if not event.isAutoRepeat() and self._held_direction == keys[event.key()]:
+                self._held_direction = None
+                self._held_timer.stop()
+            event.accept()
+        else:
+            super().keyReleaseEvent(event)
+
+    def focusOutEvent(self,event):
+        self._clear_held_input()
+        super().focusOutEvent(event)
 
     def showEvent(self,event):
         self._sync_effects_timer()
@@ -805,11 +1133,12 @@ class MazeBoard(QWidget):
 
     def hideEvent(self,event):
         self.effects_timer.stop()
-        self._animation.stop()
+        self._cancel_motion()
         self._set_visual_position(QPointF(self.player[1], self.player[0]))
         super().hideEvent(event)
 
     def closeEvent(self,event):
         self.effects_timer.stop()
-        self._animation.stop()
+        self._cancel_motion()
+        self._field_worker.shutdown(wait=False,cancel_futures=True)
         super().closeEvent(event)

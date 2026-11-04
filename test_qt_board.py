@@ -2,8 +2,7 @@
 import os
 import unittest
 
-if not os.environ.get('DISPLAY') and not os.environ.get('WAYLAND_DISPLAY'):
-    os.environ.setdefault('QT_QPA_PLATFORM', 'offscreen')
+os.environ.setdefault('QT_QPA_PLATFORM', 'offscreen')
 try:
     from PySide6.QtCore import QPointF, Qt
     from PySide6.QtGui import QImage, QPainter
@@ -81,14 +80,83 @@ class BoardTests(unittest.TestCase):
 
     def test_movement_animation_does_not_cut_corners(self):
         self.state((0, 1))
-        self.board.visualPosition = QPointF(.5, 0)
+        self.board._animation.setCurrentTime(50)
+        before = QPointF(self.board.visualPosition)
         self.state((1, 1))
+        self.assertEqual(self.board.visualPosition, before)
+        self.assertEqual(self.board._animation.endValue(), QPointF(1, 0))
+        self.assertEqual(list(self.board._motion_queue), [QPointF(1, 1)])
+        self.board._animation.setCurrentTime(self.board._animation.duration())
         self.assertEqual(self.board._animation.startValue(), QPointF(1, 0))
+        self.assertEqual(self.board._animation.endValue(), QPointF(1, 1))
+        self.board._animation.setCurrentTime(70)
+        self.assertEqual(self.board.visualPosition.x(), 1)
+        self.assertGreater(self.board.visualPosition.y(), 0)
+        self.assertLess(self.board.visualPosition.y(), 1)
         self.state((3, 4))
         self.assertEqual(self.board.visualPosition, QPointF(4, 3))
+        self.assertFalse(self.board._motion_queue)
         self.board.reduced_motion = True
         self.state((3, 3))
         self.assertEqual(self.board.visualPosition, QPointF(3, 3))
+
+    def test_held_key_moves_on_leg_completion_without_os_repeat_or_release_backlog(self):
+        from PySide6.QtCore import QEvent
+        from PySide6.QtGui import QKeyEvent
+        moves = []
+        def east(direction):
+            self.assertEqual(direction, 'E')
+            moves.append(direction)
+            self.state((0, len(moves)))
+        self.board.moved.connect(east)
+        QTest.keyPress(self.board, Qt.Key.Key_D)
+        self.assertEqual(self.board.player, (0, 1))
+        repeat = QKeyEvent(QEvent.Type.KeyPress, Qt.Key.Key_D,
+                           Qt.KeyboardModifier.NoModifier, 'd', True, 1)
+        for _ in range(8):
+            self.board.keyPressEvent(repeat)
+        self.assertEqual(len(moves), 1)
+        self.board._animation.setCurrentTime(self.board._animation.duration())
+        self.assertEqual(len(moves), 2)
+        QTest.keyRelease(self.board, Qt.Key.Key_D)
+        self.board._animation.setCurrentTime(self.board._animation.duration())
+        self.assertEqual(len(moves), 2)
+        self.assertIsNone(self.board._held_direction)
+
+    def test_tapped_turn_waits_for_corner_and_executes_only_once(self):
+        moves = []
+        def step(direction):
+            moves.append(direction)
+            self.state((0, 1) if direction == 'E' else (1, 1))
+        self.board.moved.connect(step)
+        QTest.keyClick(self.board, Qt.Key.Key_D)
+        self.board._animation.setCurrentTime(40)
+        before = QPointF(self.board.visualPosition)
+        QTest.keyClick(self.board, Qt.Key.Key_S)
+        self.assertEqual(moves, ['E'])
+        self.assertEqual(self.board.visualPosition, before)
+        self.board._animation.setCurrentTime(self.board._animation.duration())
+        self.assertEqual(moves, ['E', 'S'])
+        self.assertEqual(self.board._animation.startValue(), QPointF(1, 0))
+        self.board._animation.setCurrentTime(self.board._animation.duration())
+        self.assertEqual(moves, ['E', 'S'])
+
+    def test_reduced_motion_holds_repeat_on_own_clock_and_stop_on_release(self):
+        self.board.reduced_motion = True
+        moves = []
+        def east(direction):
+            moves.append(direction)
+            self.state((0, len(moves)))
+        self.board.moved.connect(east)
+        QTest.keyPress(self.board, Qt.Key.Key_D)
+        self.assertEqual(self.board.visualPosition, QPointF(1, 0))
+        self.assertTrue(self.board._held_timer.isActive())
+        self.board._repeat_reduced_motion()
+        self.assertEqual(self.board.visualPosition, QPointF(2, 0))
+        QTest.keyRelease(self.board, Qt.Key.Key_D)
+        self.assertFalse(self.board._held_timer.isActive())
+        self.board._repeat_reduced_motion()
+        self.assertEqual(moves, ['E', 'E'])
 
     def test_keys_emit_compass_directions(self):
         directions = []
@@ -104,3 +172,14 @@ class BoardTests(unittest.TestCase):
         self.board.hide()
         self.board.show()
         self.assertEqual(self.board.visualPosition, QPointF(1, 0))
+
+    def test_chained_motion_preserves_display_tick_overshoot(self):
+        from unittest.mock import patch
+        self.state((0,1))
+        self.state((1,1))
+        self.board._leg_clock = 100.0
+        with patch('qt_board.time.monotonic',return_value=100.160):
+            self.board._animation.setCurrentTime(self.board._animation.duration())
+        self.assertEqual(self.board._animation.currentTime(),15)
+        self.assertEqual(self.board.visualPosition.x(),1)
+        self.assertGreater(self.board.visualPosition.y(),0)
