@@ -28,7 +28,7 @@ On Windows, use `.venv\Scripts\python.exe main.py` after installing requirements
 
 Click the maze, then move with **arrows or WASD**. Reach the gate to finish the chapter. A cloaked explorer marks your position; a ring marks the start. **H** requests a lantern hint. Reveal the route shows the remaining path. Both count as assistance.
 
-Fog of war hides unexplored corridors in Play. Nearby visible passages become known; previously visited areas stay dimly visible. Hints and revealed routes remain usable. Observe shows the full floor plan for teaching. World settings can disable fog or lamp movement, and Reduce animation removes the fades and movement interpolation.
+Fog of war hides unexplored corridors in Play. The soft lantern footprint becomes known; previously explored passages stay dimly visible, and distant walls remain fully hidden. Hints and revealed routes remain usable. Observe shows the full floor plan for teaching. World settings can disable fog or lamp movement, and Reduce animation removes the fades and movement interpolation.
 
 A completed quest shows your move count, the direct route length and assistance used, then offers the next chapter. All five chapters are available from the quest selector. Chapter size increases from 20 to 768 cells; seeds vary in route length and branching, so a larger board is not guaranteed to be harder in every instance.
 
@@ -64,6 +64,14 @@ Read [the algorithm walkthrough](docs/ALGORITHMS.md) for mechanics, complexity a
 QT_QPA_PLATFORM=offscreen .venv/bin/python -m unittest discover -v
 .venv/bin/python -m compileall -q main.py maze.py levels.py qt_app.py qt_board.py
 ```
+
+To measure animated rendering on the largest chapter:
+
+```bash
+QT_QPA_PLATFORM=offscreen .venv/bin/python benchmark_scene.py --level 5
+```
+
+Omit `QT_QPA_PLATFORM=offscreen` to measure the native desktop window. The report includes paint times, the share within the 16.7 ms budget, Qt paint-event cadence and process CPU use. It measures Qt rendering rather than display presentation; results depend on window size, pixel density and hardware. Static scenery, lamps, character poses and fog memory are cached; movement updates the local light footprint.
 
 Tests protect graph invariants, deterministic seeds, large levels, BFS shortest routes, movement, quest completion, hints, input validation, timer cancellation, themes and board rendering. Qt workflow tests need the installed requirements; they can run without a desktop using the offscreen platform. CI runs Python 3.11–3.13. A CI configuration is included; local verification does not imply a remote CI run.
 

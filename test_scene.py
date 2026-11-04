@@ -185,3 +185,55 @@ class SceneTests(unittest.TestCase):
         self.assertLess(alpha(.5), 3)
         self.assertLess(alpha(1.5), alpha(2.5))
         self.assertGreater(alpha(3.5), 235)
+
+    def test_unexplored_fog_is_opaque_and_stable_when_idle(self):
+        from PySide6.QtGui import QImage, QPainter
+        from PySide6.QtCore import Qt
+        self.window.chapter_box.setCurrentIndex(4)
+        self.window.skip_generation()
+        board = self.window.board
+        board.grab()
+        _, floor, cell = board._geometry()
+        image = QImage(board.size(), QImage.Format.Format_ARGB32)
+        image.fill(Qt.GlobalColor.transparent)
+        painter = QPainter(image)
+        board._draw_fog(painter,floor,cell)
+        painter.end()
+        # Even wall tops in far unexplored regions must be completely hidden.
+        pixel = image.pixelColor(round(floor.right()-cell*2),round(floor.bottom()-cell*2))
+        self.assertEqual(pixel.alpha(),255)
+        self.assertEqual((pixel.red(),pixel.green(),pixel.blue()),(12,20,23))
+        cached = board._fog_image.cacheKey()
+        board.grab()
+        self.assertEqual(board._fog_image.cacheKey(),cached)
+
+    def test_memory_records_soft_visibility_instead_of_uniform_cells(self):
+        from maze import Maze
+        board = self.window.board
+        maze = Maze(1,5)
+        for col in range(4):
+            maze.grid[0][col].walls.remove('E')
+            maze.grid[0][col+1].walls.remove('W')
+        board.configure_scene(True,True)
+        board.set_state(maze,(0,0),[],[],set(),set())
+        board.grab()
+        memory = board._fog_memory
+        # Three points within the same cell retain different fog strengths.
+        samples = [memory.pixelColor(round(2+x*12),8).red() for x in (2.1,2.5,2.9)]
+        self.assertLess(samples[0],samples[1])
+        self.assertLess(samples[1],samples[2])
+        first = memory.copy()
+        board.set_state(maze,(0,0),[],[],set(),set())
+        board.grab()
+        self.assertEqual(first,board._fog_memory)
+
+    def test_idle_light_only_repaints_when_opacity_changes(self):
+        self.window.skip_generation()
+        board = self.window.board
+        board._scene_started -= 4
+        calls = []
+        board.update = lambda *args: calls.append(True)
+        board._ambient_tick()
+        first = len(calls)
+        board._ambient_tick()
+        self.assertEqual(len(calls),first)
