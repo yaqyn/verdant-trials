@@ -145,7 +145,7 @@ Visibility rays walk the cells they cross. Nearby lighting fields are cached and
 QT_QPA_PLATFORM=offscreen .venv/bin/python -m unittest discover -v
 ```
 
-Tests cover graph invariants, deterministic generation, large levels, BFS routes, wall occlusion, worker image ownership, keyboard movement, continuous turns, timer cancellation, themes, hints and fog behavior. GitHub Actions runs the suite on Python 3.11–3.13.
+Tests cover graph invariants, deterministic generation, large levels, BFS routes, wall occlusion, worker image ownership, keyboard movement, continuous turns, timer cancellation, themes, hints and fog behavior. GitHub Actions runs the suite on Python 3.10–3.13.
 
 To measure actual traversal, including new-cell discovery and turns:
 
