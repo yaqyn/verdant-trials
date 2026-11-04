@@ -1,88 +1,191 @@
-# Maze Runner
+![Verdant Trials cover: a green-clad adventurer carries a lantern toward an enchanted forest labyrinth and teal waygate](docs/cover.webp)
 
-**Verdant Trials** is an enchanted-forest RPG quest for playing mazes and watching graph searches find their way. Explore ancient passages, ask the lantern for guidance, or pause an algorithm at its next decision.
+# Verdant Trials — A forest maze adventure
 
-> Based on [Boot.dev's Build a Maze Solver in Python](https://www.boot.dev/courses/build-maze-solver-python), extended into a Qt desktop game with progressive chapters and algorithm comparison. The original course uses Tkinter; this interface uses PySide6.
+Find your way through stone labyrinths with a lantern, remembered paths, and a glowing waygate. **Verdant Trials** is a desktop maze game with five chapters, paired day-and-night forest scenes, and an Observe mode that makes graph searches visible.
 
-![Maze Runner Qt interface with the forest maze and quest journal](docs/preview.png)
+[**Play locally →**](#-quick-start) · [Watch the gameplay](#-features) · [Explore the algorithms](docs/ALGORITHMS.md)
 
-## Launch
+Runs locally without an account or runtime network connection. A graphical desktop is required; progress and preferences last for the current session.
 
-Requires **Python 3.10+** and a graphical desktop. Qt is installed in the project environment; no Tkinter or system font installation is needed.
+## <img src="docs/icons/features.svg" width="24" height="24" alt=""> Features
+
+- **Explore five chapters.** Start with 20 cells and progress to a 768-cell labyrinth. Every chapter is directly selectable, with optional seeds for replaying a layout.
+- **Navigate by lantern light.** A personal lantern follows the adventurer. Fog remembers explored passages; weaker lamps remain visible in the dark, and a teal crystal marks the exit.
+- **Walk continuously.** Hold arrows or WASD to move. A quick turn waits for the next corner; releasing the key stops further repeats.
+- **Watch a search think.** Compare depth-first and breadth-first search, pause exploration, advance one event, and adjust the pace.
+- **Choose the atmosphere.** Daylight and Moonlight use matching forest artwork. Reduced animation provides immediate movement and steady lighting.
+
+<p align="center">
+  <img src="docs/gameplay-hard.gif" width="560" height="560" alt="Square gameplay demonstration through the 432-cell Moonlit thicket and 768-cell Elder labyrinth, showing the moving lantern, fog memory and distant lamps">
+</p>
+
+*Harder chapters in motion: Moonlit thicket and The elder labyrinth. This is a scripted-input capture of the actual Qt game, sampled at 20 frames per second for the GIF; it is not a gameplay-performance benchmark.*
+
+## <img src="docs/icons/installation.svg" width="24" height="24" alt=""> Installation
+
+Requires **Python 3.10+**, Git, and a graphical desktop. Native rendering uses OpenGL; a software renderer is available when needed. Qt and Pillow are installed in the project environment, and the display font is bundled.
 
 ```bash
+git clone https://github.com/yaqyn/verdant-trials.git
+cd verdant-trials
 python3 -m venv .venv
 .venv/bin/python -m pip install -r requirements.txt
-./launch
 ```
 
-On Windows, use `.venv\Scripts\python.exe main.py` after installing requirements with that interpreter.
+Linux desktop support may also require your distribution's XCB or Wayland libraries and graphics drivers. No Tkinter or system font installation is needed.
+
+<details>
+<summary>Windows setup</summary>
+
+After cloning the repository and entering its directory:
+
+```powershell
+py -m venv .venv
+.venv\Scripts\python.exe -m pip install -r requirements.txt
+.venv\Scripts\python.exe main.py
+```
+
+</details>
+
+## <img src="docs/icons/launch.svg" width="24" height="24" alt=""> Quick start
 
 ```bash
-./launch --level 3 --seed 42 --delay 180
+./launch --level 1 --seed 42
 ```
 
-`launch` works from another directory. The game needs no account or runtime network connection. Qt's Linux desktop platform may require distribution-provided XCB or Wayland libraries. On a headless machine, use the offscreen platform for tests rather than launching a visible window.
+The forest opens on **The moss gate**. Let the maze form, or choose **Enter maze now** to skip generation. Click the maze, then use arrows or WASD to reach the teal waygate. Close the window to stop the game and its background work.
 
-## Play
+To begin with a larger chapter:
 
-Click the maze, then move with **arrows or WASD**. Reach the gate to finish the chapter. A cloaked explorer marks your position; a ring marks the start. **H** requests a lantern hint. Reveal the route shows the remaining path. Both count as assistance.
+```bash
+./launch --level 4 --seed 42 --delay 180
+```
 
-Fog of war hides unexplored corridors in Play. The soft lantern footprint becomes known; previously explored passages stay dimly visible, and distant walls remain fully hidden. Hints and revealed routes remain usable. Observe shows the full floor plan for teaching. World settings can disable fog or lamp movement, and Reduce animation removes the fades and movement interpolation.
+`launch` also works when invoked from another directory.
 
-A completed quest shows your move count, the direct route length and assistance used, then offers the next chapter. All five chapters are available from the quest selector. Chapter size increases from 20 to 768 cells; seeds vary in route length and branching, so a larger board is not guaranteed to be harder in every instance.
+## <img src="docs/icons/usage.svg" width="24" height="24" alt=""> Usage
 
-## Observe
+![Full Verdant Trials interface with the stone maze, Moonlight forest and quest journal](docs/interface.webp)
 
-Switch to **Observe** to expose the algorithm tools. Choose DFS or BFS and Run search. Pause freezes exploration; Step advances one event. Space toggles pause while the maze is focused. Gold shows the current route, blue marks explored cells, and ash marks backtracking. Wayfinder notes explain each action.
+*The complete interface, showing Ruins of the lost in Moonlight. Fog is disabled in this overview so the entire floor plan can be seen; it is enabled by default in Play.*
 
-The default delay is **180 ms per event**. Fast (60 ms), Normal (180 ms), Slow (400 ms), and the live 30–600 ms slider change the pace. Backtracking holds slightly longer. **Enter maze now** skips generation when you want to start playing immediately. Search can be replayed on the same board with another algorithm.
+### Play the labyrinth
 
-## World settings
+<img src="docs/controls-play.webp" width="320" alt="Quest chapter selector, Lantern hint button and Reveal the route button">
 
-The quest panel's World settings disclosure contains an optional numeric seed and reduced movement animation. Blank seeds create random layouts; numeric seeds reproduce the same layout at a given chapter. The actual world seed appears below the maze. Invalid input preserves the current quest.
+Choose any chapter from the **Quest journal**. The adventurer marks your position; the ring marks the entrance. Explore toward the teal crystal beacon.
 
-Daylight is the default: a bright enchanted woodland with waterfalls and runic stones. Moonlight uses a night version of that same scene, with a luminous moon and warm distant valley lights. Wallpaper always keeps its proportions when resizing: it fills the viewport through centered cropping, while the maze keeps square cells independently. Lighting changes preserve your current quest and animation state. Progress and preferences are not saved between sessions.
+| Control | Result |
+| --- | --- |
+| Arrows / WASD | Move while the maze has focus; hold to keep walking |
+| H / Lantern hint | Show one safe step from your current position |
+| Reveal the route | Show the remaining path to the exit |
+| Begin a new quest | Generate another layout, using the seed setting |
 
-## Artwork and rendering
+Hints and route reveals count as assistance. A completed quest reports moves, direct-route length and assistance, then offers the next chapter. Chapter size increases, but route length and branching also depend on the seed.
 
-The board uses paired original day/night forest artwork and a top-down castle cutaway: stone-tiled ground, raised masonry, wall shadows, and an explorer inside the corridors. Warm lamps gently fade in after generation and keep discovered passages illuminated independently of the player. The exit has a cool teal crystal beacon with a broader glow. Radial gradients and feathered fog edges soften illumination, with light pools clipped by wall visibility. A small amount of slow flicker makes the light feel alive without flashing. Qt paints at display resolution and animates player movement. Cinzel is bundled for quest headings under its SIL Open Font License; body copy uses a readable sans face.
+### Observe the algorithms
 
-[Day wallpaper provenance and generation prompt](assets/VERDANT-WORLD.md), [night edit prompt](assets/VERDANT-NIGHT.md) document the original image and font sources. No existing game's artwork is included.
+<img src="docs/controls-observe.webp" width="320" alt="Search algorithm selector and controls for running, resuming, stepping and adjusting search speed">
 
-## Learn the algorithms
+Switch to **Observe**, choose DFS or BFS, then **Run search**. Gold shows the current route, blue marks explored cells, and ash marks backtracking. Wayfinder notes explain the current action.
 
-Generation carves a connected tree with exactly one route between any pair of cells. DFS follows a branch and backs out of dead ends. BFS explores by distance. Both find the same route in these tree mazes, but their exploration order and visit counts differ.
+- **Pause / Resume** freezes or continues exploration. Space does the same while the maze is focused.
+- **Step** advances one event without resuming the timer.
+- **Fast, Normal, Slow** and the slider change the delay while a search is running. Backtracking holds slightly longer.
 
-Explicit stacks preserve DFS behavior without Python's recursion-depth limit. Qt advances the generators with a cancellable timer, keeping user input separate from traversal logic. Animation time is a teaching control, not an algorithm benchmark.
+Observe exposes the full map. Replay the same maze with the other algorithm to compare exploration order. [The algorithm guide](docs/ALGORITHMS.md) explains generation, DFS, BFS and their tradeoffs.
 
-Read [the algorithm walkthrough](docs/ALGORITHMS.md) for mechanics, complexity and short experiments.
+## <img src="docs/icons/configuration.svg" width="24" height="24" alt=""> Configuration
 
-## Verify
+<img src="docs/controls-world.webp" width="320" alt="World settings with a seed field and checkboxes for fog of war, living lamplight and reduced animation">
+
+Open **World settings** in the quest journal:
+
+| Setting | Behavior |
+| --- | --- |
+| World seed | Blank creates a random layout; a number reproduces a layout at the same chapter |
+| Fog of war | Hides unexplored passages in Play; explored areas remain dimly visible |
+| Living lamplight | Enables gentle ambient light movement; turn it off for steady illumination |
+| Reduce animation | Makes movement immediate and removes light fades and movement |
+| Daylight / Moonlight | Switches the interface and forest image without resetting the quest |
+
+Wallpaper fills its viewport through proportional cropping, while maze cells remain square. Preferences and progress are not written to disk. Invalid seed input preserves the current maze and shows inline feedback.
+
+Command-line options are `--level 1..5`, optional `--seed`, and `--delay 30..600` milliseconds per generation/search event. The default search pace is **180 ms**; it is separate from walking speed.
+
+If a desktop cannot create an OpenGL context, select software rendering:
+
+```bash
+MAZE_RENDERER=raster ./launch
+```
+
+The raster path preserves the scene but can be slower at large window sizes. Headless verification uses `QT_QPA_PLATFORM=offscreen` instead of opening a desktop window.
+
+## <img src="docs/icons/architecture.svg" width="24" height="24" alt=""> Architecture
+
+The maze model owns connectivity and movement. The quest window owns game state and controls. Rendering consumes that state through a hardware-accelerated board, with the same painter available for headless tests.
+
+```mermaid
+flowchart LR
+    A[Keyboard and quest controls] --> B[QuestWindow]
+    B --> C[Maze model]
+    C -->|Moves and search events| B
+    B --> D[Board state]
+    D --> E[Cached scenery and light fields]
+    E --> F[OpenGL canvas]
+    E --> G[Raster test canvas]
+    classDef model fill:#243732,stroke:#e4cd92,color:#f3f1df,stroke-width:1.6px
+    classDef renderer fill:#1b2928,stroke:#70eedc,color:#f3f1df,stroke-width:1.6px
+    class A,B,C model
+    class D,E,F,G renderer
+    linkStyle default stroke:#8ba295
+```
+
+Visibility rays walk the cells they cross. Nearby lighting fields are cached and blended during movement; a single background worker prepares upcoming image data. Fog memory and texture uploads update affected areas, and static scenery, fixtures and character poses are reused. This is wall-aware **2D lighting**, rather than a physically based global-illumination simulation.
+
+| Source | Responsibility |
+| --- | --- |
+| [maze.py](maze.py) | Cells, generation, graph searches, movement and route hints |
+| [qt_app.py](qt_app.py) | Quest state, native controls, shortcuts and search timer |
+| [qt_board.py](qt_board.py) | Scene layers, fog, light caches and smooth movement |
+| [lighting.py](lighting.py) | Grid visibility and deterministic lamp placement |
+| [light_field.py](light_field.py) | Worker-safe image preparation and gradient feathering |
+| [levels.py](levels.py) | Chapter sizes, names and learning concepts |
+| [DESIGN.md](DESIGN.md) | Visual direction and interaction contracts |
+
+## <img src="docs/icons/verification.svg" width="24" height="24" alt=""> Verification
 
 ```bash
 QT_QPA_PLATFORM=offscreen .venv/bin/python -m unittest discover -v
-.venv/bin/python -m compileall -q main.py maze.py levels.py qt_app.py qt_board.py
 ```
 
-To measure animated rendering on the largest chapter:
+Tests cover graph invariants, deterministic generation, large levels, BFS routes, wall occlusion, worker image ownership, keyboard movement, continuous turns, timer cancellation, themes, hints and fog behavior. GitHub Actions runs the suite on Python 3.11–3.13.
+
+To measure actual traversal, including new-cell discovery and turns:
 
 ```bash
-QT_QPA_PLATFORM=offscreen .venv/bin/python benchmark_scene.py --level 5
+.venv/bin/python benchmark_scene.py --level 5 --fullscreen
 ```
 
-Omit `QT_QPA_PLATFORM=offscreen` to measure the native desktop window. The report includes paint times, the share within the 16.7 ms budget, Qt paint-event cadence and process CPU use. It measures Qt rendering rather than display presentation; results depend on window size, pixel density and hardware. Static scenery, lamps, character poses and fog memory are cached; movement updates the local light footprint.
+The report includes paint times, frame gaps, CPU use, renderer, viewport changes and OpenGL swap-event cadence. A 16.7 ms render budget targets 60 fps; timing depends on hardware, pixel density, viewport size and other desktop activity. Paint and swap events do not measure physical monitor scanout. The README GIF is a visual demonstration, not evidence of frame rate.
 
-Tests protect graph invariants, deterministic seeds, large levels, BFS shortest routes, movement, quest completion, hints, input validation, timer cancellation, themes and board rendering. Qt workflow tests need the installed requirements; they can run without a desktop using the offscreen platform. CI runs Python 3.11–3.13. A CI configuration is included; local verification does not imply a remote CI run.
+[Media capture instructions and provenance](docs/MEDIA.md) describe how the screenshots and scripted GIF were made.
 
-| File | Responsibility |
-| --- | --- |
-| `maze.py` | Cells, generation, searches, movement and route hints |
-| `levels.py` | Chapters, grid dimensions and learning concepts |
-| `qt_app.py` | Quest workflows, shared styles, controls and timer |
-| `qt_board.py` | Castle cutaway, lights, fog, scenery and player animation |
-| `lighting.py` | Wall visibility and deterministic lamp placement |
-| `assets/` | Original illustration, vector art and licensed font |
-| `main.py`, `launch` | Desktop entry point and location-independent launcher |
+## <img src="docs/icons/limitations.svg" width="24" height="24" alt=""> Limitations
 
-[DESIGN.md](DESIGN.md) records visual and interaction decisions. Native Qt controls provide keyboard navigation and focus. Reduced motion disables movement interpolation. Assistive-technology behavior varies by platform; no accessibility certification is claimed.
+- Progress and preferences are session-only. All chapters are available without unlocking them.
+- The game requires a desktop; there is no browser, mobile or packaged binary release.
+- Native Qt controls provide keyboard focus and accessible names, but no platform-wide assistive-technology certification is claimed.
+- Small lanterns intentionally remain visible through unexplored fog; discovering the intervening passages still requires exploration.
+
+For a reproducible problem, [open an issue](https://github.com/yaqyn/verdant-trials/issues) with the chapter, seed, operating system and renderer.
+
+## <img src="docs/icons/license.svg" width="24" height="24" alt=""> Artwork and acknowledgments
+
+The forest illustrations, character rendering and cover belong to this project's visual identity. The cover is illustrative key art; the screenshots and GIF show the running game. [Media provenance](docs/MEDIA.md), [day artwork](assets/VERDANT-WORLD.md) and [night artwork](assets/VERDANT-NIGHT.md) document their sources and prompts.
+
+No repository-wide license is declared. The bundled Cinzel typeface retains its [SIL Open Font License](assets/fonts/OFL-Cinzel.txt) and [source notes](assets/fonts/SOURCES.md).
+
+> **Learning Journey Project · Boot.dev.** Based on [Build a Maze Solver in Python](https://www.boot.dev/courses/build-maze-solver-python), extended from the course's Tkinter approach into a Qt forest adventure with progressive chapters, interactive play and search comparison.

@@ -7,4 +7,4 @@ Cinzel is designed by Natanael Gama and distributed under the SIL Open Font Lice
 - Bundled variable font: https://raw.githubusercontent.com/google/fonts/main/ofl/cinzel/Cinzel%5Bwght%5D.ttf
 - License source: https://raw.githubusercontent.com/google/fonts/main/ofl/cinzel/OFL.txt
 
-Downloaded 2026-11-03. The file is unchanged, renamed locally to `Cinzel.ttf` for a stable application path. It is registered for the running process where the platform and Tk build support it; it is not installed into the user's font directories. Unsupported builds use an available serif face. Body text uses an installed readable sans-serif.
+Downloaded 2026-11-03. The file is unchanged, renamed locally to `Cinzel.ttf` for a stable application path. Qt registers it for the running process with QFontDatabase; it is not installed into the user's font directories. Unsupported builds use an available serif face. Body text uses an installed readable sans-serif.

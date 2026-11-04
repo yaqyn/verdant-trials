@@ -10,7 +10,7 @@ Use case: stylized-concept. Asset type: desktop medieval fantasy maze game backg
 
 ## Vector assets
 
-The SVG quest icons and wall segments are original project-local vector drawings. `qt_board.py` renders the vectors through Qt SVG at the board scale, with painter-based shadows; no browser engine is required.
+The SVG quest icons and wall segments are original project-local vector drawings. Native Qt controls use the quest icons. The current board paints masonry, the adventurer and the crystal beacon with QPainter; older wall and gate vectors are retained as source artwork. No browser engine is required.
 
 ## Typography
 
