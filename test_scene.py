@@ -192,6 +192,7 @@ class SceneTests(unittest.TestCase):
         self.window.chapter_box.setCurrentIndex(4)
         self.window.skip_generation()
         board = self.window.board
+        board._scene_started -= 4
         board.grab()
         _, floor, cell = board._geometry()
         image = QImage(board.size(), QImage.Format.Format_ARGB32)
@@ -219,7 +220,8 @@ class SceneTests(unittest.TestCase):
         board.grab()
         memory = board._fog_memory
         # Three points within the same cell retain different fog strengths.
-        samples = [memory.pixelColor(round(2+x*12),8).red() for x in (2.1,2.5,2.9)]
+        samples = [memory.pixelColor(round(6+x*board._fog_resolution),
+                   round(6+board._fog_resolution*.5)).red() for x in (2.1,2.5,2.9)]
         self.assertLess(samples[0],samples[1])
         self.assertLess(samples[1],samples[2])
         first = memory.copy()
@@ -237,3 +239,50 @@ class SceneTests(unittest.TestCase):
         first = len(calls)
         board._ambient_tick()
         self.assertEqual(len(calls),first)
+
+    def test_native_feather_produces_continuous_edge_gradient(self):
+        from PySide6.QtGui import QPixmap, QPainter, QColor
+        from PySide6.QtCore import Qt
+        source = QPixmap(80,40)
+        source.fill(Qt.GlobalColor.transparent)
+        painter = QPainter(source)
+        painter.fillRect(0,0,40,40,QColor(255,255,255))
+        painter.end()
+        softened = self.window.board._soften_image(source,6).toImage()
+        edge = [softened.pixelColor(x,20).alpha() for x in range(34,47)]
+        self.assertGreater(len(set(edge)),8)
+        self.assertTrue(all(a >= b for a,b in zip(edge,edge[1:])))
+
+    def test_discovered_lamp_removes_fog_away_from_player(self):
+        from PySide6.QtCore import QPointF, Qt
+        from PySide6.QtGui import QImage, QPainter
+        self.window.chapter_box.setCurrentIndex(1)
+        self.window.skip_generation()
+        board = self.window.board
+        board.reduced_motion = True
+        board.grab()
+        # The entrance lamp remains discovered while the explorer is far away.
+        board.visualPosition = QPointF(board.maze.cols-1,board.maze.rows-1)
+        _, floor, cell = board._geometry()
+        def entrance_alpha():
+            image = QImage(board.size(),QImage.Format.Format_ARGB32)
+            image.fill(Qt.GlobalColor.transparent)
+            painter = QPainter(image)
+            board._draw_fog(painter,floor,cell)
+            painter.end()
+            point = board._point(board.lamps[0],floor,cell)
+            return image.pixelColor(round(point.x()),round(point.y())).alpha()
+        lit = entrance_alpha()
+        board.discovered.clear()
+        board._fog_key = None
+        unlit = entrance_alpha()
+        self.assertLess(lit,unlit-60)
+        self.assertEqual((int(board.lamps[-1][1]),int(board.lamps[-1][0])),
+                         (board.maze.rows-1,board.maze.cols-1))
+        # The exit pool has a different spectral balance from warm lamps.
+        warm = board._lamp_images[0][0].toImage()
+        cool = board._lamp_images[-1][0].toImage()
+        warm = warm.pixelColor(warm.width()//2,warm.height()//2)
+        cool = cool.pixelColor(cool.width()//2,cool.height()//2)
+        self.assertGreater(warm.red(),warm.blue())
+        self.assertGreater(cool.blue(),cool.red())

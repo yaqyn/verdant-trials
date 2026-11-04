@@ -7,7 +7,7 @@ import time
 from PySide6.QtCore import QEasingCurve, QPointF, Property, QPropertyAnimation, QRectF, QSize, Qt, QTimer, Signal
 from PySide6.QtGui import QColor, QImage, QBrush, QLinearGradient, QPainter, QPainterPath, QPen, QPixmap, QPolygonF, QRadialGradient
 from PySide6.QtSvg import QSvgRenderer
-from PySide6.QtWidgets import QWidget
+from PySide6.QtWidgets import QWidget, QGraphicsBlurEffect, QGraphicsPixmapItem, QGraphicsScene
 from lighting import wall_segments, visibility_polygon, visible_cells, lamp_positions
 
 ASSETS = Path(__file__).resolve().parent / 'assets'
@@ -71,6 +71,7 @@ class MazeBoard(QWidget):
         self._static_key = None
         self._static = QPixmap()
         self._masonry = QPixmap()
+        self._wall_width = 3
         self._wallpapers = {name: QPixmap(str(ASSETS / filename)) for name, filename in
                             (('light', 'verdant-world.png'), ('dark', 'verdant-night.png'))}
         self._frame = self._wallpapers[self.mode]
@@ -199,10 +200,15 @@ class MazeBoard(QWidget):
             self._scene_key = key
             self._segments = wall_segments(self.maze)
             self.lamps = list(lamp_positions(self.maze, max_lamps=14))
-            self._light_polygons = [(visibility_polygon(pos,self._segments,2.8,rays=64),)
-                                    for pos in self.lamps]
-            self._lamp_images = [self._pool_image(pos, polygons, 2.8, QColor(255,204,119,82))
-                                 for pos,polygons in zip(self.lamps,self._light_polygons)]
+            self.lamps[-1] = (self.maze.cols-.24,self.maze.rows-.5)
+            self._lamp_radii = [2.8]*(len(self.lamps)-1)+[3.1]
+            self._light_polygons = [(visibility_polygon(pos,self._segments,radius,rays=64),)
+                                    for pos,radius in zip(self.lamps,self._lamp_radii)]
+            self._lamp_images = [self._pool_image(pos, polygons, radius,
+                                 QColor(112,238,220,140) if index == len(self.lamps)-1 else QColor(255,192,92,118))
+                                 for index,(pos,polygons,radius) in enumerate(zip(self.lamps,self._light_polygons,self._lamp_radii))]
+            self._lamp_coverage = [self._pool_image(pos,polygons,radius,QColor(255,255,255,255))
+                                   for pos,polygons,radius in zip(self.lamps,self._light_polygons,self._lamp_radii)]
             self._player_light_key = None
             self._visibility_key = None
         key = (self.player, tuple(self.overlay), self.play_mode)
@@ -370,10 +376,33 @@ class MazeBoard(QWidget):
                 getattr(self,'_local_segments',self._segments),3.4,rays=32),)
         return origin, self._player_light_polygons
 
-    def _pool_image(self, origin, polygons, radius, color):
-        # Rasterize once in maze coordinates. Smooth scaling turns the coverage
-        # edge into a continuous penumbra, without multiple shadow-ray fans.
-        resolution = 12
+    def _soften_image(self, source, radius=2.5):
+        """Qt's native blur makes continuous feathering, including shadow edges.
+
+        Work on compact coverage textures, then cache the result. Bilinear
+        enlargement alone cannot remove a stair-stepped visibility boundary.
+        """
+        if not hasattr(self,'_soft_scene'):
+            self._soft_scene = QGraphicsScene(self)
+            self._soft_item = QGraphicsPixmapItem()
+            self._soft_blur = QGraphicsBlurEffect()
+            self._soft_blur.setBlurHints(QGraphicsBlurEffect.BlurHint.QualityHint)
+            self._soft_item.setGraphicsEffect(self._soft_blur)
+            self._soft_scene.addItem(self._soft_item)
+        source = QPixmap.fromImage(source) if isinstance(source,QImage) else source
+        self._soft_item.setPixmap(source)
+        self._soft_blur.setBlurRadius(radius)
+        area = QRectF(0,0,source.width(),source.height())
+        self._soft_scene.setSceneRect(area)
+        result = QPixmap(source.size())
+        result.fill(Qt.GlobalColor.transparent)
+        painter = QPainter(result)
+        self._soft_scene.render(painter,area,area)
+        painter.end()
+        return result
+
+    def _pool_image(self, origin, polygons, radius, color, resolution=32):
+        # Higher-density gradient texture with native feathering; cached per lamp.
         extent = math.ceil(radius*resolution)
         image = QPixmap(extent*2,extent*2)
         image.fill(Qt.GlobalColor.transparent)
@@ -382,8 +411,16 @@ class MazeBoard(QWidget):
         painter.translate(extent-origin[0]*resolution,extent-origin[1]*resolution)
         self._radial_pool(painter,QRectF(0,0,0,0),resolution,origin,polygons,radius,color)
         painter.end()
-        return image, QRectF(origin[0]-extent/resolution,origin[1]-extent/resolution,
+        return self._soften_image(image), QRectF(origin[0]-extent/resolution,origin[1]-extent/resolution,
                              extent*2/resolution,extent*2/resolution)
+
+    def _player_coverage(self, origin, polygons, resolution):
+        key = (origin,self._scene_key,resolution)
+        if getattr(self,'_coverage_key',None) != key:
+            self._coverage_key = key
+            self._personal_coverage = self._pool_image(origin,polygons,3.4,
+                                                       QColor(255,255,255,255),resolution)
+        return self._personal_coverage
 
     def _draw_pool_image(self, painter, board, size, pool):
         image, rect = pool
@@ -394,7 +431,7 @@ class MazeBoard(QWidget):
     def _radial_pool(self, painter, board, size, origin, polygons, radius, color):
         center = self._point(origin, board, size)
         gradient = QRadialGradient(center, radius*size)
-        for stop, strength in ((0,1),(.16,.94),(.4,.55),(.68,.16),(1,0)):
+        for stop, strength in ((0,1),(.12,1),(.4,.55),(.68,.16),(1,0)):
             shade = QColor(color)
             shade.setAlphaF(color.alphaF()*strength)
             gradient.setColorAt(stop, shade)
@@ -433,9 +470,16 @@ class MazeBoard(QWidget):
         p.setOpacity(1)
         if self.play_mode:
             origin, polygons = self._player_light()
-            if getattr(self,'_personal_pool_key',None) != (origin,self._scene_key):
-                self._personal_pool_key = (origin,self._scene_key)
-                self._personal_pool = self._pool_image(origin,polygons,3.4,QColor(255,222,157,65))
+            resolution = max(12,min(48,math.ceil(size*self.devicePixelRatioF())))
+            if getattr(self,'_personal_pool_key',None) != (origin,self._scene_key,resolution):
+                self._personal_pool_key = (origin,self._scene_key,resolution)
+                coverage, rect = self._player_coverage(origin,polygons,resolution)
+                tinted = coverage.copy()
+                tint = QPainter(tinted)
+                tint.setCompositionMode(QPainter.CompositionMode.CompositionMode_SourceIn)
+                tint.fillRect(tinted.rect(),QColor(255,222,157,65))
+                tint.end()
+                self._personal_pool = (tinted,rect)
             self._draw_pool_image(p,board,size,self._personal_pool)
         p.restore()
 
@@ -467,6 +511,41 @@ class MazeBoard(QWidget):
             radius = max(1.7,min(5,size*.075))
             p.save()
             p.setOpacity(strength)
+            if index == len(self.lamps)-1:
+                # The destination is a cool waystone beacon, distinct from the
+                # warm brass passage lamps. Its halo stays calm and readable.
+                radius = max(2.3,min(7,size*.105))
+                halo_radius = max(9,size*.32)
+                halo = QRadialGradient(center,halo_radius)
+                halo.setColorAt(0,QColor(154,255,232,145))
+                halo.setColorAt(.30,QColor(74,231,214,80))
+                halo.setColorAt(1,QColor(61,206,198,0))
+                p.setPen(Qt.PenStyle.NoPen)
+                p.setBrush(halo)
+                p.drawEllipse(center,halo_radius,halo_radius)
+                p.setPen(QPen(QColor('#7dbcb0'),max(.8,radius*.16)))
+                p.setBrush(QColor('#304d49'))
+                p.drawEllipse(center+QPointF(0,radius*.42),radius*1.4,radius*.78)
+                p.setBrush(Qt.BrushStyle.NoBrush)
+                p.setPen(QPen(QColor('#b3e5ce'),max(.7,radius*.11)))
+                p.drawEllipse(center,radius*1.65,radius*1.65)
+                crystal = QPainterPath(center+QPointF(0,-radius*1.45))
+                crystal.lineTo(center+QPointF(radius*.72,-radius*.12))
+                crystal.lineTo(center+QPointF(radius*.38,radius*.88))
+                crystal.lineTo(center+QPointF(-radius*.38,radius*.88))
+                crystal.lineTo(center+QPointF(-radius*.72,-radius*.12))
+                crystal.closeSubpath()
+                facets = QLinearGradient(center-QPointF(radius,0),center+QPointF(radius,0))
+                facets.setColorAt(0,QColor('#278e93'))
+                facets.setColorAt(.48,QColor('#dcfff0'))
+                facets.setColorAt(.55,QColor('#7bf7d8'))
+                facets.setColorAt(1,QColor('#389f9f'))
+                p.setBrush(facets)
+                p.setPen(QPen(QColor('#d2fff2'),max(.7,radius*.10)))
+                p.drawPath(crystal)
+                p.drawLine(center+QPointF(0,-radius*1.3),center+QPointF(0,radius*.70))
+                p.restore()
+                continue
             p.setPen(QPen(QColor('#443c2b'),max(1,radius*.4)))
             p.setBrush(QColor('#78613e'))
             p.drawEllipse(center+QPointF(1,2),radius*1.4,radius*1.4)
@@ -478,8 +557,9 @@ class MazeBoard(QWidget):
     def _draw_fog(self, p, board, size):
         if not (self.scene_ready and self.play_mode and self.fog_enabled) or self.complete:
             return
-        resolution, padding = 12, 2
-        memory_key = (id(self.maze), self._scene_key, self.play_mode)
+        resolution, padding = max(12,min(48,math.ceil(size*self.devicePixelRatioF()))), 6
+        self._fog_resolution = resolution
+        memory_key = (id(self.maze), self._scene_key, self.play_mode,resolution)
         if getattr(self,'_fog_memory_key',None) != memory_key:
             self._fog_memory_key = memory_key
             self._fog_memory = QImage(self.maze.cols*resolution+padding*2,
@@ -512,8 +592,13 @@ class MazeBoard(QWidget):
             self._fog_base = QImage(self._fog_memory.size(),QImage.Format.Format_ARGB32_Premultiplied)
             self._fog_base.fill(QColor(12,20,23))
             self._fog_base.setAlphaChannel(self._fog_memory)
+            self._fog_base = self._soften_image(self._fog_base,max(2.5,resolution*.08)).toImage()
         origin, polygons = self._player_light()
-        key = (origin,tuple(self.overlay),len(self._recorded_origins))
+        elapsed = time.monotonic()-self._scene_started
+        known_lamps = tuple(index for index,position in enumerate(self.lamps)
+                            if (int(position[1]),int(position[0])) in self.discovered)
+        fades = tuple(round(self._lamp_strength(index,elapsed)*255) for index in known_lamps)
+        key = (origin,tuple(self.overlay),len(self._recorded_origins),fades)
         if self._fog_key != key:
             self._fog_key = key
             image = self._fog_base.copy()
@@ -521,7 +606,16 @@ class MazeBoard(QWidget):
             mask.setRenderHint(QPainter.RenderHint.Antialiasing)
             mask.translate(padding,padding)
             mask.setCompositionMode(QPainter.CompositionMode.CompositionMode_DestinationOut)
-            self._radial_pool(mask,QRectF(),resolution,origin,polygons,3.4,QColor(0,0,0,255))
+            # The same feathered coverage texture drives both visible glow and
+            # fog removal. Only the small moving light is blurred each frame.
+            self._draw_pool_image(mask,QRectF(),resolution,self._player_coverage(origin,polygons,resolution))
+            # Once discovered, a lamp remains an independent source of sight.
+            # Its radial illumination must remove fog, not merely tint a floor
+            # that an opaque fog layer subsequently covers.
+            for index,fade in zip(known_lamps,fades):
+                mask.setOpacity(fade/255)
+                self._draw_pool_image(mask,QRectF(),resolution,self._lamp_coverage[index])
+            mask.setOpacity(1)
             # Explicit guidance remains usable through fog; round its endpoints.
             if self.overlay:
                 path = QPainterPath(self._center(self.overlay[0],QRectF(),resolution))
@@ -537,6 +631,7 @@ class MazeBoard(QWidget):
             self._fog_image = QPixmap.fromImage(image)
         p.save()
         p.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
+        p.setClipRect(board.adjusted(-self._wall_width/2,-self._wall_width/2,self._wall_width/2,self._wall_width/2))
         margin = padding*size/resolution
         p.drawPixmap(board.adjusted(-margin,-margin,margin,margin),self._fog_image,QRectF(self._fog_image.rect()))
         p.restore()

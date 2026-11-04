@@ -46,7 +46,7 @@ Daylight is the default: a bright enchanted woodland with waterfalls and runic s
 
 ## Artwork and rendering
 
-The board uses paired original day/night forest artwork and a top-down castle cutaway: stone-tiled ground, raised masonry, wall shadows, and an explorer inside the corridors. Lamps gently fade in after generation. Their radial light pools are clipped by wall visibility, so illumination stops at solid walls. A small amount of slow flicker makes the light feel alive without flashing. Qt paints at display resolution and animates player movement. Cinzel is bundled for quest headings under its SIL Open Font License; body copy uses a readable sans face.
+The board uses paired original day/night forest artwork and a top-down castle cutaway: stone-tiled ground, raised masonry, wall shadows, and an explorer inside the corridors. Warm lamps gently fade in after generation and keep discovered passages illuminated independently of the player. The exit has a cool teal crystal beacon with a broader glow. Radial gradients and feathered fog edges soften illumination, with light pools clipped by wall visibility. A small amount of slow flicker makes the light feel alive without flashing. Qt paints at display resolution and animates player movement. Cinzel is bundled for quest headings under its SIL Open Font License; body copy uses a readable sans face.
 
 [Day wallpaper provenance and generation prompt](assets/VERDANT-WORLD.md), [night edit prompt](assets/VERDANT-NIGHT.md) document the original image and font sources. No existing game's artwork is included.
 
