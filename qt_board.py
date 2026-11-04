@@ -58,6 +58,8 @@ class MazeBoard(QWidget):
         self.lamps = []
         self._segments = ()
         self._light_polygons = []
+        self._path_cache = {}
+        self._lamp_layer_key = None
         self._visibility_key = None
         self._scene_key = None
         self._scene_started = time.monotonic()
@@ -71,10 +73,11 @@ class MazeBoard(QWidget):
         self._frame = self._wallpapers[self.mode]
         self._gate = QSvgRenderer(str(ASSETS / 'icons/waygate.svg'), self)
         self._animation = QPropertyAnimation(self, b'visualPosition', self)
-        self._animation.setDuration(105)
-        self._animation.setEasingCurve(QEasingCurve.Type.OutCubic)
+        self._animation.setDuration(145)
+        self._animation.setEasingCurve(QEasingCurve.Type.InOutSine)
         self.effects_timer = QTimer(self)
-        self.effects_timer.setInterval(33)
+        self.effects_timer.setInterval(16)
+        self.effects_timer.setTimerType(Qt.TimerType.PreciseTimer)
         self.effects_timer.timeout.connect(self.update)
         self._effects_timer = self.effects_timer
 
@@ -89,6 +92,7 @@ class MazeBoard(QWidget):
 
     def _set_visual_position(self, value):
         self._visual_position = value
+        self._player_light_key = None
         self.update()
 
     visualPosition = Property(QPointF, _get_visual_position, _set_visual_position)
@@ -164,8 +168,8 @@ class MazeBoard(QWidget):
             self._scene_key = key
             self._segments = wall_segments(self.maze)
             self.lamps = list(lamp_positions(self.maze, max_lamps=14))
-            self._light_polygons = [visibility_polygon(pos, self._segments, 2.35, rays=64)
-                                    for pos in self.lamps]
+            self._light_polygons = [self._area_visibility(pos, 2.8) for pos in self.lamps]
+            self._player_light_key = None
             self._visibility_key = None
         key = (self.player, tuple(self.overlay), self.play_mode)
         if self._visibility_key != key:
@@ -174,8 +178,7 @@ class MazeBoard(QWidget):
             self.discovered.update(self.visible)
             # Assistance deliberately reveals the requested route through the mist.
             self.discovered.update(self.overlay)
-            self._player_polygon = visibility_polygon((self.player[1]+.5, self.player[0]+.5),
-                                                        self._segments, 3.4, rays=96)
+
 
     def _geometry(self):
         area = QRectF(0, 0, self.width(), self.height())
@@ -302,10 +305,17 @@ class MazeBoard(QWidget):
         painter.drawPath(path)
 
     def _polygon_path(self, points, board, size):
+        key = (points, board.left(), board.top(), size)
+        cached = self._path_cache.get(key)
+        if cached is not None:
+            return cached
         path = QPainterPath()
         if points:
             path.addPolygon(QPolygonF([self._point(pos,board,size) for pos in points]))
             path.closeSubpath()
+        if len(self._path_cache) > 240:
+            self._path_cache.clear()
+        self._path_cache[key] = path
         return path
 
     def _lamp_strength(self, index, elapsed):
@@ -314,31 +324,63 @@ class MazeBoard(QWidget):
         fade = max(0.,min(1.,(elapsed-.18-index*.075)/1.1))
         return fade*fade*(3-2*fade)
 
+    def _area_visibility(self, origin, radius):
+        # A small area emitter produces overlapping soft penumbras at corners.
+        return tuple(visibility_polygon((origin[0]+dx, origin[1]+dy),
+                     self._segments, radius, rays=64)
+                     for dx,dy in ((0,0),(-.14,0),(.14,0),(0,-.14),(0,.14)))
+
+    def _player_light(self):
+        origin = (self._visual_position.x()+.5, self._visual_position.y()+.5)
+        if getattr(self, '_player_light_key', None) != origin:
+            self._player_light_key = origin
+            self._player_light_polygons = self._area_visibility(origin, 3.4)
+        return origin, self._player_light_polygons
+
+    def _radial_pool(self, painter, board, size, origin, polygons, radius, color):
+        center = self._point(origin, board, size)
+        gradient = QRadialGradient(center, radius*size)
+        for stop, strength in ((0,1),(.16,.94),(.4,.55),(.68,.16),(1,0)):
+            shade = QColor(color)
+            shade.setAlphaF(color.alphaF()*strength)
+            gradient.setColorAt(stop, shade)
+        for polygon in polygons:
+            painter.save()
+            painter.setClipPath(self._polygon_path(polygon,board,size), Qt.ClipOperation.IntersectClip)
+            painter.setPen(Qt.PenStyle.NoPen)
+            painter.setBrush(gradient)
+            painter.drawEllipse(center,radius*size,radius*size)
+            painter.restore()
+
     def _draw_lights(self, p, board, size):
         if not self.scene_ready:
             return
         elapsed = time.monotonic()-self._scene_started
         p.save()
         p.setClipRect(board)
-        for index,(position,polygon) in enumerate(zip(self.lamps,self._light_polygons)):
-            strength = self._lamp_strength(index,elapsed)
-            if strength <= 0:
-                continue
-            center = self._point(position,board,size)
-            oscillation = 0 if self.reduced_motion or not self.ambient_motion else math.sin(elapsed*1.3+index*2.1)*.025
-            radius = size*2.35
+        steady = elapsed > 2.5 or self.reduced_motion or not self.ambient_motion
+        key = (self._scene_key,self.width(),self.height(),self.devicePixelRatioF(),self.mode)
+        if steady:
+            if self._lamp_layer_key != key:
+                self._lamp_layer_key = key
+                self._lamp_layer = self._new_layer()
+                lamps = QPainter(self._lamp_layer)
+                lamps.setRenderHint(QPainter.RenderHint.Antialiasing)
+                lamps.setClipRect(board)
+                for position,polygons in zip(self.lamps,self._light_polygons):
+                    self._radial_pool(lamps,board,size,position,polygons,2.8,QColor(255,204,119,19))
+                lamps.end()
             p.save()
-            p.setClipPath(self._polygon_path(polygon,board,size), Qt.ClipOperation.IntersectClip)
-            gradient = QRadialGradient(center+QPointF(oscillation*size*.12,oscillation*size*.08), radius)
-            alpha = round((70 if self.mode == 'dark' else 37)*strength*(1+oscillation))
-            gradient.setColorAt(0,QColor(255,203,105,alpha))
-            gradient.setColorAt(.22,QColor(255,194,87,round(alpha*.72)))
-            gradient.setColorAt(.62,QColor(249,178,68,round(alpha*.20)))
-            gradient.setColorAt(1,QColor(255,184,79,0))
-            p.setPen(Qt.PenStyle.NoPen)
-            p.setBrush(gradient)
-            p.drawEllipse(center,radius,radius)
+            p.setOpacity(1 if self.reduced_motion or not self.ambient_motion else .97+.025*math.sin(elapsed*.85))
+            p.drawPixmap(0,0,self._lamp_layer)
             p.restore()
+        else:
+            for index,(position,polygons) in enumerate(zip(self.lamps,self._light_polygons)):
+                self._radial_pool(p,board,size,position,polygons,2.8,
+                                  QColor(255,204,119,round(19*self._lamp_strength(index,elapsed))))
+        if self.play_mode:
+            origin, polygons = self._player_light()
+            self._radial_pool(p,board,size,origin,polygons,3.4,QColor(255,222,157,15))
         p.restore()
 
     def _draw_lamp_fixtures(self, p, board, size):
@@ -364,56 +406,104 @@ class MazeBoard(QWidget):
     def _draw_fog(self, p, board, size):
         if not (self.scene_ready and self.play_mode and self.fog_enabled) or self.complete:
             return
-        p.save()
-        p.setClipRect(board.adjusted(-self._wall_width/2,-self._wall_width/2,self._wall_width/2,self._wall_width/2))
-        all_area = QPainterPath()
-        all_area.addRect(board.adjusted(-12,-12,12,12))
+        # Composite darkness, then remove it with smooth radial light. Visibility
+        # geometry only occludes the light; it is never painted as a bright shape.
+        layer = self._new_layer()
+        mask = QPainter(layer)
+        mask.setRenderHint(QPainter.RenderHint.Antialiasing)
+        mask.setClipRect(board.adjusted(-self._wall_width/2,-self._wall_width/2,
+                                       self._wall_width/2,self._wall_width/2))
+        mask.fillRect(board.adjusted(-12,-12,12,12), QColor(12,20,23,242))
+        mask.setCompositionMode(QPainter.CompositionMode.CompositionMode_DestinationOut)
         known = QPainterPath()
-        for r,c in self.discovered | set(self.trail) | set(self.overlay):
+        known.setFillRule(Qt.FillRule.WindingFill)
+        for r,c in self.discovered | set(self.trail):
             known.addRect(QRectF(board.left()+c*size,board.top()+r*size,size,size))
-        visible_path = self._polygon_path(getattr(self,'_player_polygon',()),board,size)
+        mask.fillPath(known,QColor(0,0,0,105))
+        origin, polygons = self._player_light()
+        self._radial_pool(mask,board,size,origin,polygons,3.4,QColor(0,0,0,220))
+        # Guidance is explicitly readable, including repeated/overlapping cells.
         guidance = QPainterPath()
         guidance.setFillRule(Qt.FillRule.WindingFill)
         for r,c in self.overlay:
             guidance.addRect(QRectF(board.left()+c*size,board.top()+r*size,size,size))
-        visible_path = visible_path.united(guidance)
-        # Unvisited space stays opaque; remembered passages remain dimly readable.
-        p.fillPath(all_area.subtracted(known).subtracted(visible_path),QColor(15,22,24,239))
-        p.fillPath(known.subtracted(visible_path),QColor(20,27,29,110))
-        p.restore()
+        mask.fillPath(guidance,QColor(0,0,0,255))
+        mask.end()
+        p.drawPixmap(0,0,layer)
 
     def _draw_player(self, p, board, size):
+        """A top-down traveller with a readable human silhouette and lantern."""
         position = self._visual_position
-        center = QPointF(board.left()+(position.x()+.5)*size,board.top()+(position.y()+.5)*size)
-        radius = max(3.0,min(11.,size*.18))
+        center = QPointF(board.left()+(position.x()+.5)*size,
+                         board.top()+(position.y()+.5)*size)
+        radius = max(3.8, min(14., size*.23))
+        moving = (abs(position.x()-self.player[1])+abs(position.y()-self.player[0])) > .001
+        stride = (math.sin(self._animation.currentTime()/max(1,self._animation.duration())*math.pi*2)*.16
+                  if moving and not self.reduced_motion else 0.)
         p.save()
         p.translate(center)
-        dr,dc = self._facing
-        angle = math.degrees(math.atan2(dr,dc))+90
-        p.rotate(angle)
+        # A soft contact shadow anchors the feet without an outline halo.
+        shadow = QRadialGradient(QPointF(1, radius*.28), radius*1.25)
+        shadow.setColorAt(0, QColor(4, 13, 11, 110))
+        shadow.setColorAt(1, QColor(4, 13, 11, 0))
         p.setPen(Qt.PenStyle.NoPen)
-        p.setBrush(QColor(6,14,12,85))
-        p.drawEllipse(QRectF(-radius*.7,-radius*.2,radius*1.8,radius*2.3))
-        # Boots, a broad travelling cloak, shoulders, hood and pale face.
-        p.setBrush(QColor('#3a3025'))
-        p.drawEllipse(QRectF(-radius*.6,radius*.55,radius*.5,radius*.65))
-        p.drawEllipse(QRectF(radius*.1,radius*.55,radius*.5,radius*.65))
-        cloak = QPainterPath(QPointF(0,-radius*.5))
-        cloak.cubicTo(-radius*.8,-radius*.3,-radius*.95,radius*.55,-radius*.85,radius)
-        cloak.quadTo(QPointF(0,radius*1.3),QPointF(radius*.85,radius))
-        cloak.cubicTo(radius*.95,radius*.55,radius*.8,-radius*.3,0,-radius*.5)
-        cloth = QLinearGradient(QPointF(-radius,0),QPointF(radius,0))
-        cloth.setColorAt(0,QColor('#1c514b'))
-        cloth.setColorAt(.55,QColor('#4e9180'))
-        cloth.setColorAt(1,QColor('#244e45'))
-        p.setBrush(cloth)
-        p.setPen(QPen(QColor('#c8b77d'),.8))
-        p.drawPath(cloak)
-        p.setBrush(QColor('#d7b68b'))
-        p.setPen(QPen(QColor('#233c35'),max(1,radius*.18)))
-        p.drawEllipse(QPointF(0,-radius*.35),radius*.42,radius*.47)
-        p.setPen(QPen(QColor('#83ad91'),max(.8,radius*.1)))
-        p.drawLine(QPointF(0,radius*.18),QPointF(0,radius*.9))
+        p.setBrush(shadow)
+        p.drawEllipse(QRectF(-radius*1.2, -radius*.8, radius*2.4, radius*2.2))
+        dr, dc = self._facing
+        p.rotate(math.degrees(math.atan2(dr, dc))+90)
+        # Boots remain separate from the coat; alternating steps stay subtle.
+        p.setBrush(QColor('#342b24'))
+        for side in (-1, 1):
+            p.drawRoundedRect(QRectF(radius*(side*.34-.19), radius*(.45+side*stride),
+                                     radius*.38, radius*.58), radius*.12, radius*.12)
+        coat = QPainterPath(QPointF(-radius*.72, -radius*.30))
+        coat.quadTo(QPointF(-radius*.96, radius*.12), QPointF(-radius*.67, radius*.76))
+        coat.quadTo(QPointF(0, radius*.98), QPointF(radius*.67, radius*.76))
+        coat.quadTo(QPointF(radius*.96, radius*.12), QPointF(radius*.72, -radius*.30))
+        coat.quadTo(QPointF(0, -radius*.64), QPointF(-radius*.72, -radius*.30))
+        fabric = QLinearGradient(QPointF(-radius, -radius*.5), QPointF(radius, radius))
+        fabric.setColorAt(0, QColor('#75a68c'))
+        fabric.setColorAt(.42, QColor('#3b796b'))
+        fabric.setColorAt(1, QColor('#18443e'))
+        p.setBrush(fabric)
+        p.setPen(QPen(QColor('#183c34'), max(.7, radius*.08)))
+        p.drawPath(coat)
+        # Sleeves and bare hands make the shoulder line clearly human.
+        for side in (-1, 1):
+            p.setBrush(QColor('#487f6a'))
+            p.drawEllipse(QRectF(radius*(side*.75-.21), -radius*.20,
+                                radius*.42, radius*.65))
+            p.setBrush(QColor('#d6ac7c'))
+            p.drawEllipse(QPointF(side*radius*.82, radius*.40), radius*.16, radius*.20)
+        # Leather cross-body strap and a small worn satchel.
+        p.setPen(QPen(QColor('#bca377'), max(1., radius*.13)))
+        p.drawLine(QPointF(-radius*.48, -radius*.25), QPointF(radius*.42, radius*.63))
+        p.setPen(QPen(QColor('#4d3928'), max(.7, radius*.06)))
+        p.setBrush(QColor('#94704a'))
+        p.drawRoundedRect(QRectF(radius*.20, radius*.35, radius*.46, radius*.36),
+                          radius*.08, radius*.08)
+        # Face points forward; the hair crown occupies the back of the head.
+        p.setBrush(QColor('#ddb88c'))
+        p.setPen(QPen(QColor('#443a2d'), max(.7, radius*.06)))
+        p.drawEllipse(QPointF(0, -radius*.47), radius*.40, radius*.47)
+        hair = QPainterPath(QPointF(-radius*.39, -radius*.53))
+        hair.cubicTo(-radius*.48, -radius*.14, radius*.45, -radius*.03,
+                     radius*.40, -radius*.55)
+        hair.quadTo(QPointF(radius*.10, -radius*.38), QPointF(-radius*.39, -radius*.53))
+        p.setBrush(QColor('#514031'))
+        p.drawPath(hair)
+        p.setPen(QPen(QColor('#8a6b46'), max(.6, radius*.05)))
+        p.drawArc(QRectF(-radius*.30, -radius*.58, radius*.60, radius*.46), 185*16, 155*16)
+        # A carried brass lantern provides an obvious source for personal light.
+        lantern = QPointF(radius*.99, radius*.50)
+        p.setPen(QPen(QColor('#73552f'), max(.8, radius*.07)))
+        p.setBrush(Qt.BrushStyle.NoBrush)
+        p.drawEllipse(lantern-QPointF(0, radius*.17), radius*.13, radius*.17)
+        p.setBrush(QColor('#ffe4a5'))
+        p.drawRoundedRect(QRectF(lantern.x()-radius*.17, lantern.y()-radius*.08,
+                                radius*.34, radius*.38), radius*.06, radius*.06)
+        p.setPen(QPen(QColor('#fff3cf'), max(.7, radius*.05)))
+        p.drawLine(lantern, lantern+QPointF(0, radius*.20))
         p.restore()
 
     def paintEvent(self, event):

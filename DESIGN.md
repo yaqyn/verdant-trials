@@ -30,6 +30,8 @@ Player movement interpolates over a short duration, respecting each cardinal leg
 
 ## Pacing and accessibility
 
+Personal lantern light follows `visualPosition` throughout movement. Fog is a darkness mask removed with radial falloff, with multiple nearby emitter samples softening corner shadows; never reveal the raw visibility polygon at uniform brightness. Stationary lamp illumination and paths are cached, while moving visibility updates with the explorer. The explorer has a readable human silhouette, travel clothes, satchel and carried lantern.
+
 Default traversal pace is 180 ms per event. Slow/Fast presets, a live slider, Pause and Step make changes inspectable; backtracking may hold longer. Skipping generation leads directly to the same generated maze. There is no ambient flashing or required decorative motion.
 
 Native Qt controls own keyboard focus, input, disabled and selected states. The board accepts arrows/WASD only when focused; seed inputs retain normal editing keys. H requests a hint and Space pauses active traversal without hijacking text input. A legend and text feedback supplement colors. All quest controls remain reachable at the minimum supported window size. No platform-wide assistive-technology certification is claimed.

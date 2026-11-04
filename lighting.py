@@ -75,15 +75,32 @@ def visibility_polygon(origin, segments, radius, rays=96):
         for x, y in ((ax, ay), (bx, by)):
             angle = atan2(y-oy, x-ox)
             angles.update(((angle-offset) % _TAU for offset in (-1e-6, 0, 1e-6)))
+    # Maze walls are axis aligned. Avoid a general cross-product intersection
+    # for every ray/wall pair during moving-lantern animation.
+    axis_aligned = all(ax == bx or ay == by for ax,ay,bx,by in nearby)
+    vertical = tuple((ax, min(ay,by), max(ay,by)) for ax,ay,bx,by in nearby if ax == bx)
+    horizontal = tuple((ay, min(ax,bx), max(ax,bx)) for ax,ay,bx,by in nearby if ay == by)
     boundary = []
     for angle in sorted(angles):
-        direction = cos(angle), sin(angle)
+        dx, dy = cos(angle), sin(angle)
         nearest = radius
-        for segment in nearby:
-            hit = _ray_hit(origin, direction, segment)
-            if hit is not None and hit < nearest:
-                nearest = hit
-        boundary.append((ox+direction[0]*nearest, oy+direction[1]*nearest))
+        if axis_aligned:
+            if abs(dx) > _EPS:
+                for x, low, high in vertical:
+                    distance = (x-ox)/dx
+                    if 0 <= distance < nearest and low-_EPS <= oy+dy*distance <= high+_EPS:
+                        nearest = distance
+            if abs(dy) > _EPS:
+                for y, low, high in horizontal:
+                    distance = (y-oy)/dy
+                    if 0 <= distance < nearest and low-_EPS <= ox+dx*distance <= high+_EPS:
+                        nearest = distance
+        else:
+            for segment in nearby:
+                hit = _ray_hit(origin, (dx,dy), segment)
+                if hit is not None and hit < nearest:
+                    nearest = hit
+        boundary.append((ox+dx*nearest, oy+dy*nearest))
     return tuple(boundary)
 
 

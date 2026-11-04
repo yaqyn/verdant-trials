@@ -138,3 +138,50 @@ class SceneTests(unittest.TestCase):
         painter.end()
         self.assertEqual(image.pixelColor(round(floor.left()+cell*.5),
                                           round(floor.top()+cell*.5)).alpha(), 0)
+
+    def test_personal_light_tracks_interpolated_position_and_keeps_feet_visible(self):
+        from PySide6.QtCore import QPointF, Qt
+        from PySide6.QtGui import QImage, QPainter
+        self.window.skip_generation()
+        board = self.window.board
+        board.grab()
+        _, floor, cell = board._geometry()
+        route = self.window.maze.route_from((0, 0))
+        r, c = route[1]
+        # Logical destination differs from the intermediate rendered position.
+        board.player = (r, c)
+        for fraction in (.1, .35, .65, .9):
+            board.visualPosition = QPointF(c*fraction, r*fraction)
+            origin, polygons = board._player_light()
+            self.assertAlmostEqual(origin[0], c*fraction+.5)
+            self.assertAlmostEqual(origin[1], r*fraction+.5)
+            image = QImage(board.size(), QImage.Format.Format_ARGB32)
+            image.fill(Qt.GlobalColor.transparent)
+            painter = QPainter(image)
+            board._draw_fog(painter, floor, cell)
+            painter.end()
+            center = board._point(origin, floor, cell)
+            self.assertLess(image.pixelColor(round(center.x()), round(center.y())).alpha(), 3)
+
+    def test_personal_light_fades_gradually_and_stops_at_solid_wall(self):
+        from maze import Maze
+        from PySide6.QtCore import Qt
+        from PySide6.QtGui import QImage, QPainter
+        board = self.window.board
+        maze = Maze(1, 5)
+        for col in range(2):
+            maze.grid[0][col].walls.remove('E')
+            maze.grid[0][col+1].walls.remove('W')
+        board.configure_scene(True, True)
+        board.set_state(maze,(0,0),[],[],set(),set())
+        board.grab()
+        _, floor, cell = board._geometry()
+        image = QImage(board.size(), QImage.Format.Format_ARGB32)
+        image.fill(Qt.GlobalColor.transparent)
+        painter = QPainter(image)
+        board._draw_fog(painter,floor,cell)
+        painter.end()
+        alpha = lambda x: image.pixelColor(round(floor.left()+x*cell), round(floor.center().y())).alpha()
+        self.assertLess(alpha(.5), 3)
+        self.assertLess(alpha(1.5), alpha(2.5))
+        self.assertGreater(alpha(3.5), 235)
