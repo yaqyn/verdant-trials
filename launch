@@ -1,8 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
 project_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
-if [[ ! -x "$project_dir/.venv/bin/python" ]]; then
-  echo 'Create the environment first: python3 -m venv .venv && .venv/bin/python -m pip install -r requirements.txt' >&2
-  exit 1
+if command -v python3 >/dev/null 2>&1; then
+  exec python3 "$project_dir/launcher.py" "$@"
 fi
-exec "$project_dir/.venv/bin/python" "$project_dir/main.py" "$@"
+if command -v python >/dev/null 2>&1; then
+  exec python "$project_dir/launcher.py" "$@"
+fi
+printf 'Install Python 3.10 or newer, then run ./launch again.\n' >&2
+exit 1

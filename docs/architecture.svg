@@ -1,0 +1,32 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1080" height="430" viewBox="0 0 1080 430" role="img" aria-labelledby="title desc">
+  <title id="title">Verdant Trials architecture</title>
+  <desc id="desc">Keyboard and quest controls send actions through QuestWindow to the maze model. Model events return to QuestWindow, which updates board state. Cached scenery and light fields feed either the OpenGL canvas or the raster test canvas.</desc>
+  <defs>
+    <marker id="gold" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0 0 8 4 0 8Z" fill="#e4cd92"/></marker>
+    <marker id="teal" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0 0 8 4 0 8Z" fill="#70eedc"/></marker>
+  </defs>
+  <rect width="1080" height="430" rx="20" fill="#1b2928"/>
+  <g fill="#243732" stroke-width="1.6">
+    <g stroke="#e4cd92"><rect x="28" y="56" width="190" height="100" rx="12"/><rect x="274" y="56" width="210" height="100" rx="12"/><rect x="570" y="56" width="210" height="100" rx="12"/></g>
+    <g stroke="#70eedc"><rect x="274" y="266" width="210" height="100" rx="12"/><rect x="570" y="266" width="210" height="100" rx="12"/><rect x="858" y="208" width="194" height="86" rx="12"/><rect x="858" y="322" width="194" height="86" rx="12"/></g>
+  </g>
+  <g fill="none" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+    <g stroke="#e4cd92" marker-end="url(#gold)"><path d="M218 106H268"/><path d="M484 88H564"/><path d="M570 132H490"/></g>
+    <g stroke="#70eedc" marker-end="url(#teal)"><path d="M379 156V260"/><path d="M484 316H564"/><path d="M780 303H815V251H852"/><path d="M780 330H815V365H852"/></g>
+  </g>
+  <g font-family="DejaVu Sans,Arial,sans-serif" font-size="18" fill="#f3f1df" text-anchor="middle">
+    <text x="123" y="98">Keyboard and</text><text x="123" y="124">quest controls</text>
+    <text x="379" y="111">QuestWindow</text>
+    <text x="675" y="111">Maze model</text>
+    <text x="379" y="321">Board state</text>
+    <text x="675" y="307">Cached scenery</text><text x="675" y="333">and light fields</text>
+    <text x="955" y="257">OpenGL canvas</text>
+    <text x="955" y="358">Raster test</text><text x="955" y="382">canvas</text>
+  </g>
+  <g font-family="DejaVu Sans,Arial,sans-serif" font-size="12" fill="#bfcdc2" text-anchor="middle">
+    <text x="527" y="76">actions</text><text x="527" y="150">events</text>
+    <text x="452" y="211">state updates</text><text x="525" y="304">render</text>
+    <text x="71" y="396" text-anchor="start">Model and controls</text><path d="M29 391H56" stroke="#e4cd92" stroke-width="2"/>
+    <text x="262" y="396" text-anchor="start">Rendering</text><path d="M220 391H247" stroke="#70eedc" stroke-width="2"/>
+  </g>
+</svg>

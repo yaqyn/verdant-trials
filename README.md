@@ -24,43 +24,35 @@ Runs locally without an account or runtime network connection. A graphical deskt
 
 ## <img src="docs/icons/installation.svg" width="24" height="24" alt=""> Installation
 
-Requires **Python 3.10+**, Git, and a graphical desktop. Native rendering uses OpenGL; a software renderer is available when needed. Qt and Pillow are installed in the project environment, and the display font is bundled.
+Requires **Python 3.10+**, Git, and a graphical desktop. Native rendering uses OpenGL; a software renderer is available when needed. The launcher installs Qt and Pillow into the project environment; the display font is bundled.
 
 ```bash
-git clone https://github.com/yaqyn/verdant-trials.git
-cd verdant-trials
-python3 -m venv .venv
-.venv/bin/python -m pip install -r requirements.txt
+git clone https://github.com/yaqyn/verdant-trials.git && cd verdant-trials && ./launch
 ```
+
+The launcher creates `.venv`, installs the game dependencies on first run, and opens the game. Later launches reuse that environment without reinstalling unchanged dependencies. Setup needs an internet connection once; gameplay works offline.
 
 Linux desktop support may also require your distribution's XCB or Wayland libraries and graphics drivers. No Tkinter or system font installation is needed.
 
 <details>
 <summary>Windows setup</summary>
 
-After cloning the repository and entering its directory:
+After cloning the repository and entering its directory, run:
 
 ```powershell
-py -m venv .venv
-.venv\Scripts\python.exe -m pip install -r requirements.txt
-.venv\Scripts\python.exe main.py
+py launcher.py
 ```
 
+The same helper creates the local environment and starts the game.
 </details>
 
 ## <img src="docs/icons/launch.svg" width="24" height="24" alt=""> Quick start
 
 ```bash
-./launch --level 1 --seed 42
+./launch
 ```
 
 The forest opens on **The moss gate**. Let the maze form, or choose **Enter maze now** to skip generation. Click the maze, then use arrows or WASD to reach the teal waygate. Close the window to stop the game and its background work.
-
-To begin with a larger chapter:
-
-```bash
-./launch --level 4 --seed 42 --delay 180
-```
 
 `launch` also works when invoked from another directory.
 
@@ -113,7 +105,13 @@ Open **World settings** in the quest journal:
 
 Wallpaper fills its viewport through proportional cropping, while maze cells remain square. Preferences and progress are not written to disk. Invalid seed input preserves the current maze and shows inline feedback.
 
-Command-line options are `--level 1..5`, optional `--seed`, and `--delay 30..600` milliseconds per generation/search event. The default search pace is **180 ms**; it is separate from walking speed.
+Optional command-line settings are `--level 1..5`, `--seed`, and `--delay 30..600` milliseconds per generation/search event:
+
+```bash
+./launch --level 4 --seed 42 --delay 180
+```
+
+You can also choose these settings in the game. The default search pace is **180 ms**; it is separate from walking speed.
 
 If a desktop cannot create an OpenGL context, select software rendering:
 
@@ -127,21 +125,7 @@ The raster path preserves the scene but can be slower at large window sizes. Hea
 
 The maze model owns connectivity and movement. The quest window owns game state and controls. Rendering consumes that state through a hardware-accelerated board, with the same painter available for headless tests.
 
-```mermaid
-flowchart LR
-    A[Keyboard and quest controls] --> B[QuestWindow]
-    B --> C[Maze model]
-    C -->|Moves and search events| B
-    B --> D[Board state]
-    D --> E[Cached scenery and light fields]
-    E --> F[OpenGL canvas]
-    E --> G[Raster test canvas]
-    classDef model fill:#243732,stroke:#e4cd92,color:#f3f1df,stroke-width:1.6px
-    classDef renderer fill:#1b2928,stroke:#70eedc,color:#f3f1df,stroke-width:1.6px
-    class A,B,C model
-    class D,E,F,G renderer
-    linkStyle default stroke:#8ba295
-```
+![Architecture: controls and maze events update the board, whose cached scene feeds the OpenGL or raster canvas](docs/architecture.svg)
 
 Visibility rays walk the cells they cross. Nearby lighting fields are cached and blended during movement; a single background worker prepares upcoming image data. Fog memory and texture uploads update affected areas, and static scenery, fixtures and character poses are reused. This is wall-aware **2D lighting**, rather than a physically based global-illumination simulation.
 

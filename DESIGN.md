@@ -41,3 +41,7 @@ Native Qt controls own keyboard focus, input, disabled and selected states. The 
 ## Verification contract
 
 Model tests protect connectivity, reciprocal walls, deterministic seeds, large levels and BFS route behavior. Qt tests exercise completion, hints, mode changes, theme changes, invalid input, timer cancellation, pause/step, keyboard movement, rendering and animation. CI uses Qt's offscreen platform; desktop review also checks normal rendering, chapter switching, layout at minimum size and the visible popup states of selectors.
+
+## First-run contract
+
+`./launch` opens the default game without arguments. `launcher.py` creates a project-local virtual environment and installs changed or missing dependencies once; normal relaunches reuse it without network work. Windows uses the same helper through `py launcher.py`. Optional chapter, seed and search-pace flags stay secondary to in-game controls.
