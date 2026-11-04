@@ -96,3 +96,11 @@ class BoardTests(unittest.TestCase):
         QTest.keyClick(self.board, Qt.Key.Key_Up)
         QTest.keyClick(self.board, Qt.Key.Key_D)
         self.assertEqual(directions, ['N', 'E'])
+
+    def test_hiding_mid_step_settles_explorer_at_logical_cell(self):
+        self.board.show()
+        self.state((0, 1))
+        self.board.visualPosition = QPointF(.5, 0)
+        self.board.hide()
+        self.board.show()
+        self.assertEqual(self.board.visualPosition, QPointF(1, 0))

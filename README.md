@@ -26,7 +26,9 @@ On Windows, use `.venv\Scripts\python.exe main.py` after installing requirements
 
 ## Play
 
-Click the maze, then move with **arrows or WASD**. Reach the gate to finish the chapter. The gold diamond is your position; a ring marks the start. **H** requests a lantern hint. Reveal the route shows the remaining path. Both count as assistance.
+Click the maze, then move with **arrows or WASD**. Reach the gate to finish the chapter. A cloaked explorer marks your position; a ring marks the start. **H** requests a lantern hint. Reveal the route shows the remaining path. Both count as assistance.
+
+Fog of war hides unexplored corridors in Play. Nearby visible passages become known; previously visited areas stay dimly visible. Hints and revealed routes remain usable. Observe shows the full floor plan for teaching. World settings can disable fog or lamp movement, and Reduce animation removes the fades and movement interpolation.
 
 A completed quest shows your move count, the direct route length and assistance used, then offers the next chapter. All five chapters are available from the quest selector. Chapter size increases from 20 to 768 cells; seeds vary in route length and branching, so a larger board is not guaranteed to be harder in every instance.
 
@@ -40,13 +42,13 @@ The default delay is **180 ms per event**. Fast (60 ms), Normal (180 ms), Slow (
 
 The quest panel's World settings disclosure contains an optional numeric seed and reduced movement animation. Blank seeds create random layouts; numeric seeds reproduce the same layout at a given chapter. The actual world seed appears below the maze. Invalid input preserves the current quest.
 
-Daylight is the default: a bright enchanted woodland with waterfalls and runic stones. Moonlight switches the interface to a softer dark palette. Wallpaper always keeps its proportions when resizing: it fills the viewport through centered cropping, while the maze keeps square cells independently. Lighting changes preserve your current quest and animation state. Progress and preferences are not saved between sessions.
+Daylight is the default: a bright enchanted woodland with waterfalls and runic stones. Moonlight uses a night version of that same scene, with a luminous moon and warm distant valley lights. Wallpaper always keeps its proportions when resizing: it fills the viewport through centered cropping, while the maze keeps square cells independently. Lighting changes preserve your current quest and animation state. Progress and preferences are not saved between sessions.
 
 ## Artwork and rendering
 
-The board uses original cinematic enchanted-forest artwork, editable SVG stone walls and icons, a quiet earth texture, and cast shadows. Qt paints at display resolution and animates player movement. Cinzel is bundled for quest headings under its SIL Open Font License; body copy uses a readable sans face.
+The board uses paired original day/night forest artwork and a top-down castle cutaway: stone-tiled ground, raised masonry, wall shadows, and an explorer inside the corridors. Lamps gently fade in after generation. Their radial light pools are clipped by wall visibility, so illumination stops at solid walls. A small amount of slow flicker makes the light feel alive without flashing. Qt paints at display resolution and animates player movement. Cinzel is bundled for quest headings under its SIL Open Font License; body copy uses a readable sans face.
 
-[Current wallpaper provenance and final generation prompt](assets/VERDANT-WORLD.md) document the original image and font sources. No existing game's artwork is included.
+[Day wallpaper provenance and generation prompt](assets/VERDANT-WORLD.md), [night edit prompt](assets/VERDANT-NIGHT.md) document the original image and font sources. No existing game's artwork is included.
 
 ## Learn the algorithms
 
@@ -70,7 +72,8 @@ Tests protect graph invariants, deterministic seeds, large levels, BFS shortest 
 | `maze.py` | Cells, generation, searches, movement and route hints |
 | `levels.py` | Chapters, grid dimensions and learning concepts |
 | `qt_app.py` | Quest workflows, shared styles, controls and timer |
-| `qt_board.py` | Painter-based scenery, SVGs and player animation |
+| `qt_board.py` | Castle cutaway, lights, fog, scenery and player animation |
+| `lighting.py` | Wall visibility and deterministic lamp placement |
 | `assets/` | Original illustration, vector art and licensed font |
 | `main.py`, `launch` | Desktop entry point and location-independent launcher |
 

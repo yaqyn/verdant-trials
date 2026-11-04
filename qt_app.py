@@ -186,7 +186,7 @@ class QuestWindow(QMainWindow):
         self.reveal_button = self._button('Reveal the route', self.reveal)
         play_layout.addWidget(self.hint_button)
         play_layout.addWidget(self.reveal_button)
-        play_layout.addWidget(self._label('Reach the waygate. Hints show one safe step; revealing the route counts as assistance.', 'muted', True))
+        play_layout.addWidget(self._label('Reach the waygate. Rooms reveal as you explore. Hints show one safe step; revealing the route counts as assistance.', 'muted', True))
         right.addWidget(self.play_panel)
         self.observe_panel = QWidget()
         observe_layout = QVBoxLayout(self.observe_panel)
@@ -250,7 +250,17 @@ class QuestWindow(QMainWindow):
         self.seed_input.setAccessibleName('World seed')
         self.seed_input.returnPressed.connect(self.new_maze)
         advanced.addWidget(self.seed_input)
-        self.reduced_motion = QCheckBox('Reduce movement animation')
+        self.fog_checkbox = QCheckBox('Fog of war')
+        self.fog_checkbox.setChecked(True)
+        self.fog_checkbox.setToolTip('Hide unexplored rooms. Visited corridors remain dimly visible. Play mode only.')
+        self.fog_checkbox.toggled.connect(lambda _: self._refresh())
+        advanced.addWidget(self.fog_checkbox)
+        self.ambient_checkbox = QCheckBox('Living lamplight')
+        self.ambient_checkbox.setChecked(True)
+        self.ambient_checkbox.setToolTip('Gentle lamplight movement. Turn off for steady illumination.')
+        self.ambient_checkbox.toggled.connect(lambda _: self._refresh())
+        advanced.addWidget(self.ambient_checkbox)
+        self.reduced_motion = QCheckBox('Reduce animation')
         self.reduced_motion.toggled.connect(self._motion_changed)
         advanced.addWidget(self.reduced_motion)
         right.addWidget(self.advanced)
@@ -276,7 +286,7 @@ class QuestWindow(QMainWindow):
         self.advanced_button.setText('World settings −' if visible else 'World settings +')
 
     def _motion_changed(self, enabled):
-        self.board.reduced_motion = enabled or self.mode == 'Observe'
+        self.board.reduced_motion = enabled
         self._refresh()
 
     def _hint_shortcut(self):
@@ -384,7 +394,11 @@ class QuestWindow(QMainWindow):
         self.legend.setText('Arrows / WASD to move    H for a hint    Gold marks guidance' if self.mode == 'Play'
                             else 'Gold: current route    Blue: explored    Ash: backtracked    Space: pause')
         self.metrics_label.setText(f'World seed {self.active_seed}    Moves {self.moves}    Explored {self.visits}    Backtracks {self.retreats}    Hints {self.hints}')
-        self.board.reduced_motion = self.reduced_motion.isChecked() or self.mode == 'Observe'
+        self.board.reduced_motion = self.reduced_motion.isChecked()
+        self.fog_checkbox.setEnabled(self.mode == 'Play')
+        self.board.configure_scene(ready=self.phase != 'generating',
+            play_mode=self.mode == 'Play', fog_enabled=self.fog_checkbox.isChecked(),
+            ambient_motion=self.ambient_checkbox.isChecked())
         self.board.set_state(self.maze, self.player, self.trail, self.overlay,
                              self.explored, self.backtracked, self.phase == 'complete')
 
