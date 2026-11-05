@@ -80,6 +80,16 @@ class MazeTests(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     Maze(rows=rows, cols=cols)
 
+    def test_ascii_map_shows_walls_route_and_openings(self):
+        maze = self.generated(rows=2, cols=2, seed=7)
+        route = maze.route_from((0, 0))
+        drawing = maze.to_ascii(route)
+        self.assertIn("S", drawing)
+        self.assertIn("G", drawing)
+        self.assertEqual(len(drawing.splitlines()), 5)
+        with self.assertRaises(ValueError):
+            maze.to_ascii([(2, 0)])
+
 
 if __name__ == "__main__":
     unittest.main()

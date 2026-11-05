@@ -118,6 +118,26 @@ class Maze:
                 "dead_ends": sum(degree == 1 for degree in degrees),
                 "junctions": sum(degree >= 3 for degree in degrees)}
 
+    def to_ascii(self, route=()):
+        """Return a compact text map for terminals, logs, and lessons."""
+        marked = {tuple(position) for position in route}
+        if any(not (0 <= row < self.rows and 0 <= col < self.cols)
+               for row, col in marked):
+            raise ValueError("Route cells must be inside the maze")
+        lines = []
+        for row in range(self.rows):
+            top = []
+            middle = []
+            for col in range(self.cols):
+                cell = self.grid[row][col]
+                top.append("+" + ("---" if "N" in cell.walls else "   "))
+                marker = "S" if (row, col) == (0, 0) else "G" if (row, col) == (self.rows - 1, self.cols - 1) else "*" if (row, col) in marked else " "
+                middle.append(("|" if "W" in cell.walls else " ") + f" {marker} ")
+            lines.append("".join(top) + "+")
+            lines.append("".join(middle) + ("|" if "E" in self.grid[row][-1].walls else " "))
+        lines.append("".join("+" + ("---" if "S" in cell.walls else "   ") for cell in self.grid[-1]) + "+")
+        return "\n".join(lines)
+
     def solve(self, strategy="dfs"):
         """Yield (action, position), maintaining the current route in ``path``.
 
