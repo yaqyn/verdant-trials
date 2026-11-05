@@ -90,6 +90,19 @@ class MazeTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             maze.to_ascii([(2, 0)])
 
+    def test_directions_describe_each_step_to_the_exit(self):
+        maze = self.generated(rows=3, cols=3, seed=9)
+        route = maze.route_from((0, 0))
+        directions = maze.directions_from((0, 0))
+        self.assertEqual(len(directions), len(route) - 1)
+        self.assertTrue(all(direction in {"N", "E", "S", "W"} for direction in directions))
+        position = (0, 0)
+        offsets = {"N": (-1, 0), "E": (0, 1), "S": (1, 0), "W": (0, -1)}
+        for direction in directions:
+            dr, dc = offsets[direction]
+            position = (position[0] + dr, position[1] + dc)
+        self.assertEqual(position, (2, 2))
+
 
 if __name__ == "__main__":
     unittest.main()

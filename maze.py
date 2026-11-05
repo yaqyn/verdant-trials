@@ -110,6 +110,19 @@ class Maze:
                     queue.append(neighbor)
         return []
 
+    def directions_from(self, start):
+        """Return compass steps for the shortest route from a cell to the exit."""
+        route = self.route_from(start)
+        steps = []
+        for (row, col), (next_row, next_col) in zip(route, route[1:]):
+            direction = next(
+                direction
+                for dr, dc, direction, _ in DIRECTIONS
+                if (row + dr, col + dc) == (next_row, next_col)
+            )
+            steps.append(direction)
+        return steps
+
     def metrics(self):
         """Count graph features; boundary entrance/exit openings are excluded."""
         degrees = [sum(1 for _ in self._passages((r, c)))
